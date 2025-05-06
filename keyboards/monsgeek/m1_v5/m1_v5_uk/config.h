@@ -55,9 +55,11 @@
 #define SYSTEM_MAC_PIN                      C14
 
 /* UART */
-#define SERIAL_DRIVER                       SD3
-#define SD1_TX_PIN                          C10
-#define SD1_RX_PIN                          C11
+#define UART_DRIVER                         SD3
+#define UART_TX_PIN                         C10
+#define UART_TX_PAL_MODE                    7
+#define UART_RX_PIN                         C11
+#define UART_RX_PAL_MODE                    7
 
 /* Encoder */
 #define ENCODER_MAP_KEY_DELAY               1
