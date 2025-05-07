@@ -9,6 +9,10 @@
 #    define WLS_INQUIRY_BAT_TIME 3000
 #endif
 
+#ifndef WLS_KEYBOARD_REPORT_KEYS
+#    define WLS_KEYBOARD_REPORT_KEYS KEYBOARD_REPORT_KEYS
+#endif
+
 static uint8_t wls_devs = DEVS_USB;
 
 void last_matrix_activity_trigger(void);
@@ -32,6 +36,7 @@ void wireless_init(void) {
     md_init();
 }
 
+uint8_t wireless_keyboard_leds(void) __attribute__((weak));
 uint8_t wireless_keyboard_leds(void) {
 
     if (*md_getp_state() == MD_STATE_CONNECTED) {
@@ -41,6 +46,7 @@ uint8_t wireless_keyboard_leds(void) {
     return 0;
 }
 
+void wireless_send_keyboard(report_keyboard_t *report) __attribute__((weak));
 void wireless_send_keyboard(report_keyboard_t *report) {
     uint8_t wls_report_kb[MD_SND_CMD_KB_LEN] = {0};
 
@@ -49,16 +55,21 @@ void wireless_send_keyboard(report_keyboard_t *report) {
         return;
     }
 
+    _Static_assert((MD_SND_CMD_KB_LEN) - (WLS_KEYBOARD_REPORT_KEYS) >= 2, "WLS_KEYBOARD_REPORT_KEYS cannot be greater than MD_SND_CMD_KB_LEN - 2.");
+
     if (report != NULL) {
-        memcpy(wls_report_kb, (uint8_t *)report, sizeof(wls_report_kb));
+        memcpy(wls_report_kb, (uint8_t *)&report->mods, WLS_KEYBOARD_REPORT_KEYS + 2);
     }
+
     md_send_kb(wls_report_kb);
 }
 
+void wireless_send_nkro(report_nkro_t *report) __attribute__((weak));
 void wireless_send_nkro(report_nkro_t *report) {
     static report_keyboard_t temp_report_keyboard = {0};
     uint8_t wls_report_nkro[MD_SND_CMD_NKRO_LEN]  = {0};
 
+#ifdef NKRO_ENABLE
     if (*md_getp_state() != MD_STATE_CONNECTED) {
         wireless_devs_change(wls_devs, wls_devs, false);
         return;
@@ -74,15 +85,21 @@ void wireless_send_nkro(report_nkro_t *report) {
         }
 
         // find key up and del it.
-        for (uint8_t i = 0; i < KEYBOARD_REPORT_KEYS && temp_report_keyboard.keys[i]; i++) {
+        uint8_t nkro_keys = key_count;
+        for (uint8_t i = 0; i < WLS_KEYBOARD_REPORT_KEYS && temp_report_keyboard.keys[i]; i++) {
+            report_nkro_t found_report_nkro;
             uint8_t usageid = 0x00;
             uint8_t n;
 
-            for (uint8_t c = 0; c < key_count; c++) {
-                for (n = 0; n < NKRO_REPORT_BITS && !temp_report_nkro.bits[n]; n++) {}
-                usageid = (n << 3) | biton(temp_report_nkro.bits[n]);
-                del_key_bit(&temp_report_nkro, usageid);
+            found_report_nkro = temp_report_nkro;
+
+            for (uint8_t c = 0; c < nkro_keys; c++) {
+                for (n = 0; n < NKRO_REPORT_BITS && !found_report_nkro.bits[n]; n++) {}
+                usageid = (n << 3) | biton(found_report_nkro.bits[n]);
+                del_key_bit(&found_report_nkro, usageid);
                 if (usageid == temp_report_keyboard.keys[i]) {
+                    del_key_bit(&temp_report_nkro, usageid);
+                    nkro_keys--;
                     break;
                 }
             }
@@ -107,7 +124,7 @@ void wireless_send_nkro(report_nkro_t *report) {
             usageid = (n << 3) | biton(temp_report_nkro.bits[n]);
             del_key_bit(&temp_report_nkro, usageid);
 
-            for (idx = 0; idx < KEYBOARD_REPORT_KEYS; idx++) {
+            for (idx = 0; idx < WLS_KEYBOARD_REPORT_KEYS; idx++) {
                 if (temp_report_keyboard.keys[idx] == usageid) {
                     break;
                 }
@@ -117,18 +134,20 @@ void wireless_send_nkro(report_nkro_t *report) {
                 }
             }
 
-            if (idx == KEYBOARD_REPORT_KEYS && (usageid < (MD_SND_CMD_NKRO_LEN * 8))) {
+            if (idx == WLS_KEYBOARD_REPORT_KEYS && (usageid < (MD_SND_CMD_NKRO_LEN * 8))) {
                 wls_report_nkro[usageid / 8] |= 0x01 << (usageid % 8);
             }
         }
     } else {
         memset(&temp_report_keyboard, 0, sizeof(temp_report_keyboard));
     }
+#endif
 
     wireless_driver.send_keyboard(&temp_report_keyboard);
     md_send_nkro(wls_report_nkro);
 }
 
+void wireless_send_mouse(report_mouse_t *report) __attribute__((weak));
 void wireless_send_mouse(report_mouse_t *report) {
     typedef struct {
         uint8_t buttons;
@@ -156,6 +175,7 @@ void wireless_send_mouse(report_mouse_t *report) {
     md_send_mouse((uint8_t *)&wls_report_mouse);
 }
 
+void wireless_send_extra(report_extra_t *report) __attribute__((weak));
 void wireless_send_extra(report_extra_t *report) {
     uint16_t usage = 0;
 

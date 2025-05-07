@@ -57,8 +57,10 @@ void usb_transport_enable(bool enable) {
         }
     } else {
         if (USB_DRIVER.state == USB_ACTIVE) {
-            chibios_driver.send_keyboard(NULL);
-            chibios_driver.send_nkro(NULL);
+            report_keyboard_t empty_report = {0};
+            report_nkro_t empty_nkro_report = {0};
+            host_keyboard_send(&empty_report);
+            host_nkro_send(&empty_nkro_report);
         }
 
 #if !defined(KEEP_USB_CONNECTION_IN_WIRELESS_MODE)
@@ -71,21 +73,19 @@ void usb_transport_enable(bool enable) {
 
 void set_transport(transport_t new_transport) {
 
-    if (transport != new_transport) {
-        transport = new_transport;
+    transport = new_transport;
 
-        switch (transport) {
-            case TRANSPORT_USB: {
-                usb_transport_enable(true);
-                wls_transport_enable(false);
-            } break;
-            case TRANSPORT_WLS: {
-                wls_transport_enable(true);
-                usb_transport_enable(false);
-            } break;
-            default:
-                break;
-        }
+    switch (transport) {
+        case TRANSPORT_USB: {
+            wls_transport_enable(false);
+            usb_transport_enable(true);
+        } break;
+        case TRANSPORT_WLS: {
+            usb_transport_enable(false);
+            wls_transport_enable(true);
+        } break;
+        default:
+            break;
     }
 }
 
