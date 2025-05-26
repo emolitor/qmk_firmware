@@ -370,21 +370,27 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             }
         }
 
+        rgb_t bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_GREEN); // Default to Green
         // Check if we are plugged in
         if (gpio_read_pin(BT_CABLE_PIN)) {
-            if (gpio_read_pin(BT_CHARGE_PIN)) {
-                // Pin is high, fully charged
-                rgb_t green = hsv_to_matrix_adjusted_rgb(HSV_GREEN);
-                rgb_matrix_set_color(0, green.r, green.g, green.b);
-            } else {
-                // Pin is low, charging
-                rgb_t red = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
-                rgb_matrix_set_color(0, red.r, red.g, red.b);
+            // We are plugged in
+            if (!gpio_read_pin(BT_CHARGE_PIN)) {
+                // Pin is not high so we are charging
+                bat_rgb = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
             }
         } else {
-            // @todo(emolitor) use md_getp_bat to implement battery level
-            rgb_matrix_set_color(0, 0, 0, 0);
+            // We are not plugged in
+            uint8_t battery_level = *md_getp_bat();
+            if (battery_level < BATTERY_CAPACITY_LOW) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_RED);
+            } else if (battery_level < BATTERY_CAPACITY_MEDIUM) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_YELLOW);
+            } else if (battery_level < BATTERY_CAPACITY_HIGH) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_BLUE);
+            }
         }
+
+        rgb_matrix_set_color(0, bat_rgb.r, bat_rgb.g, bat_rgb.b);
     }
 
 #    ifdef WIRELESS_ENABLE
