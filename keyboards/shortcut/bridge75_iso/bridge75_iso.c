@@ -380,31 +380,28 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             uprintf("BRIDGE75: battery: %u\n", last_battery);
         #endif
 
-        // Testing this but 3,3 should be the D key, this is a hack which should be fixed later
-        //if (matrix_is_on(3,3)) {
-            rgb_t bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_GREEN); // Default to Green
-            // Check if we are plugged in
-            if (gpio_read_pin(BT_CABLE_PIN)) {
-                // We are plugged in
-                if (!gpio_read_pin(BT_CHARGE_PIN)) {
-                    bat_rgb = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
-                }
-            } else {
-                // We are not plugged in
-                uint8_t battery_level = *md_getp_bat();
-                last_battery = battery_level;
-
-                if (battery_level < BATTERY_CAPACITY_LOW) {
-                    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_RED);
-                } else if (battery_level < BATTERY_CAPACITY_MEDIUM) {
-                    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_YELLOW);
-                } else if (battery_level < BATTERY_CAPACITY_HIGH) {
-                    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_BLUE);
-                }
+        rgb_t bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_GREEN); // Default to Green
+        // Check if we are plugged in
+        if (gpio_read_pin(BT_CABLE_PIN)) {
+            // We are plugged in
+            if (!gpio_read_pin(BT_CHARGE_PIN)) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
             }
+        } else {
+            // We are not plugged in
+            uint8_t battery_level = *md_getp_bat();
+            last_battery = battery_level;
 
-            rgb_matrix_set_color(0, bat_rgb.r, bat_rgb.g, bat_rgb.b);
-        //}
+            if (battery_level < BATTERY_CAPACITY_LOW) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_RED);
+            } else if (battery_level < BATTERY_CAPACITY_MEDIUM) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_YELLOW);
+            } else if (battery_level < BATTERY_CAPACITY_HIGH) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_BLUE);
+            }
+        }
+
+        rgb_matrix_set_color(0, bat_rgb.r, bat_rgb.g, bat_rgb.b);
     }
 
 #    ifdef WIRELESS_ENABLE
@@ -432,27 +429,27 @@ void md_devs_change(uint8_t devs, bool reset) {
                 md_send_devctrl(MD_SND_CMD_DEVCTRL_2G4);
             }
         } break;
-        case DEVS_BT1: {
-            if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
-            } else {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_BT1);
-            }
-        } break;
-        case DEVS_BT2: {
-            if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
-            } else {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_BT2);
-            }
-        } break;
-        case DEVS_BT3: {
-            if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
-            } else {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_BT3);
-            }
-        } break;
+        //case DEVS_BT1: {
+        //    if (reset) {
+        //        md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
+        //    } else {
+        //        md_send_devctrl(MD_SND_CMD_DEVCTRL_BT1);
+        //    }
+        //} break;
+        //case DEVS_BT2: {
+        //    if (reset) {
+        //        md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
+        //    } else {
+        //        md_send_devctrl(MD_SND_CMD_DEVCTRL_BT2);
+        //    }
+        //} break;
+        //case DEVS_BT3: {
+        //    if (reset) {
+        //        md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
+        //    } else {
+        //        md_send_devctrl(MD_SND_CMD_DEVCTRL_BT3);
+        //    }
+        //} break;
         default:
             break;
     }
@@ -536,11 +533,11 @@ void wireless_send_nkro(report_nkro_t *report) {
         memset(&temp_report_keyboard, 0, sizeof(temp_report_keyboard));
     }
 #endif
-    void wireless_task(void);
-    bool smsg_is_busy(void);
-    while(smsg_is_busy()) {
-        wireless_task();
-    }
+    //void wireless_task(void);
+    //bool smsg_is_busy(void);
+    //while(smsg_is_busy()) {
+    //    wireless_task();
+    //}
     extern host_driver_t wireless_driver;
     wireless_driver.send_keyboard(&temp_report_keyboard);
     md_send_nkro(wls_report_nkro);
