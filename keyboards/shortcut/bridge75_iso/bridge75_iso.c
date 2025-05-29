@@ -8,6 +8,12 @@
 #    include "wireless.h"
 #endif
 
+#ifdef CONSOLE_ENABLE
+#    include "print.h"
+#endif
+
+uint8_t last_battery = 0;
+
 uint8_t blink_index = 1; // LED Blink Index
 int8_t blink_direction = 1; // LED Blink Direction
 
@@ -370,27 +376,35 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             }
         }
 
-        rgb_t bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_GREEN); // Default to Green
-        // Check if we are plugged in
-        if (gpio_read_pin(BT_CABLE_PIN)) {
-            // We are plugged in
-            if (!gpio_read_pin(BT_CHARGE_PIN)) {
-                // Pin is not high so we are charging
-                bat_rgb = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
-            }
-        } else {
-            // We are not plugged in
-            uint8_t battery_level = *md_getp_bat();
-            if (battery_level < BATTERY_CAPACITY_LOW) {
-                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_RED);
-            } else if (battery_level < BATTERY_CAPACITY_MEDIUM) {
-                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_YELLOW);
-            } else if (battery_level < BATTERY_CAPACITY_HIGH) {
-                bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_BLUE);
-            }
-        }
+        #ifdef CONSOLE_ENABLE
+            uprintf("BRIDGE75: battery: %u\n", last_battery);
+        #endif
 
-        rgb_matrix_set_color(0, bat_rgb.r, bat_rgb.g, bat_rgb.b);
+        // Testing this but 3,3 should be the D key, this is a hack which should be fixed later
+        //if (matrix_is_on(3,3)) {
+            rgb_t bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_GREEN); // Default to Green
+            // Check if we are plugged in
+            if (gpio_read_pin(BT_CABLE_PIN)) {
+                // We are plugged in
+                if (!gpio_read_pin(BT_CHARGE_PIN)) {
+                    bat_rgb = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
+                }
+            } else {
+                // We are not plugged in
+                uint8_t battery_level = *md_getp_bat();
+                last_battery = battery_level;
+
+                if (battery_level < BATTERY_CAPACITY_LOW) {
+                    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_RED);
+                } else if (battery_level < BATTERY_CAPACITY_MEDIUM) {
+                    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_YELLOW);
+                } else if (battery_level < BATTERY_CAPACITY_HIGH) {
+                    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_BLUE);
+                }
+            }
+
+            rgb_matrix_set_color(0, bat_rgb.r, bat_rgb.g, bat_rgb.b);
+        //}
     }
 
 #    ifdef WIRELESS_ENABLE
