@@ -4,6 +4,10 @@
 
 #pragma once
 
+// Necessary to set a long tapping term for the wireless configurations
+#define TAPPING_TERM_PER_KEY
+#define WIRELESS_TAPPING_TERM 3000
+
 #define MD_BT1_NAME "Bridge75 BT1"
 #define MD_BT2_NAME "Bridge75 BT2"
 #define MD_BT3_NAME "Bridge75 BT3"

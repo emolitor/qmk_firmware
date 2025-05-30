@@ -8,6 +8,10 @@
 #    include "wireless.h"
 #endif
 
+#ifdef CONSOLE_ENABLE
+#    include "print.h"
+#endif
+
 uint8_t blink_index = 1; // LED Blink Index
 int8_t blink_direction = 1; // LED Blink Direction
 
@@ -21,6 +25,22 @@ typedef union {
 confinfo_t confinfo;
 
 uint32_t post_init_timer = 0x00;
+
+
+uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
+    switch (keycode) {
+        case LT(0, KC_BT1):
+            return WIRELESS_TAPPING_TERM;
+        case LT(0, KC_BT2):
+            return WIRELESS_TAPPING_TERM;
+        case LT(0, KC_BT3):
+            return WIRELESS_TAPPING_TERM;
+        case LT(0, KC_2G4):
+            return WIRELESS_TAPPING_TERM;
+        default:
+            return TAPPING_TERM;
+    }
+}
 
 void eeconfig_confinfo_update(uint32_t raw) {
 
@@ -78,8 +98,8 @@ void keyboard_post_init_kb(void) {
 #endif
 
 #ifdef USB_POWER_EN_PIN
-    gpio_write_pin_low(USB_POWER_EN_PIN);
     gpio_set_pin_output(USB_POWER_EN_PIN);
+    gpio_write_pin_low(USB_POWER_EN_PIN);
 #endif
 
 #ifdef WIRELESS_ENABLE
@@ -136,79 +156,6 @@ void wireless_post_task(void) {
         post_init_timer = 0x00;
     }
 }
-
-uint32_t wls_process_long_press(uint32_t trigger_time, void *cb_arg) {
-    uint16_t keycode = *((uint16_t *)cb_arg);
-
-    switch (keycode) {
-        //case KC_BT1: {
-        //    wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, true);
-        //} break;
-        //case KC_BT2: {
-        //    wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, true);
-        //} break;
-        //case KC_BT3: {
-        //    wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, true);
-        //} break;
-        case KC_2G4: {
-            wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, true);
-        } break;
-        default:
-            break;
-    }
-
-    return 0;
-}
-
-bool process_record_wls(uint16_t keycode, keyrecord_t *record) {
-    static uint16_t keycode_shadow                     = 0x00;
-    static deferred_token wls_process_long_press_token = INVALID_DEFERRED_TOKEN;
-
-    keycode_shadow = keycode;
-
-#    ifndef WLS_KEYCODE_PAIR_TIME
-#        define WLS_KEYCODE_PAIR_TIME 3000
-#    endif
-
-#    define WLS_KEYCODE_EXEC(wls_dev)                                                                                          \
-        do {                                                                                                                   \
-            if (record->event.pressed) {                                                                                       \
-                wireless_devs_change(wireless_get_current_devs(), wls_dev, false);                                             \
-                if (wls_process_long_press_token == INVALID_DEFERRED_TOKEN) {                                                  \
-                    wls_process_long_press_token = defer_exec(WLS_KEYCODE_PAIR_TIME, wls_process_long_press, &keycode_shadow); \
-                }                                                                                                              \
-            } else {                                                                                                           \
-                cancel_deferred_exec(wls_process_long_press_token);                                                            \
-                wls_process_long_press_token = INVALID_DEFERRED_TOKEN;                                                         \
-            }                                                                                                                  \
-        } while (false)
-
-    switch (keycode) {
-        //case KC_BT1: {
-        //    WLS_KEYCODE_EXEC(DEVS_BT1);
-        //} break;
-        //case KC_BT2: {
-        //    WLS_KEYCODE_EXEC(DEVS_BT2);
-        //} break;
-        //case KC_BT3: {
-        //    WLS_KEYCODE_EXEC(DEVS_BT3);
-        //} break;
-        case KC_2G4: {
-            WLS_KEYCODE_EXEC(DEVS_2G4);
-        } break;
-        case KC_USB: {
-            if (record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
-            }
-        } break;
-        case KC_BATQ: {
-        } break;
-        default:
-            return true;
-    }
-
-    return false;
-}
 #endif
 
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
@@ -217,13 +164,40 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         return false;
     }
 
-#ifdef WIRELESS_ENABLE
-    if (process_record_wls(keycode, record) != true) {
-        return false;
-    }
-#endif
-
     switch (keycode) {
+        case KC_BATQ:
+            return false;
+        case KC_USB:
+            wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
+            return false;
+        case LT(0, KC_BT1):
+            if (record->tap.count && record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, false);
+            } else if (record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, true);
+            }
+            return false;
+        case LT(0, KC_BT2):
+            if (record->tap.count && record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, false);
+            } else if (record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, true);
+            }
+            return false;
+        case LT(0, KC_BT3):
+            if (record->tap.count && record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, false);
+            } else if (record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, true);
+            }
+            return false;
+        case LT(0, KC_2G4):
+            if (record->tap.count && record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, false);
+            } else if (record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, true);
+            }
+            return false;
         default:
             return true;
     }
@@ -370,21 +344,31 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             }
         }
 
+        #ifdef CONSOLE_ENABLE
+            uprintf("BRIDGE75: battery: %u\n", last_battery);
+        #endif
+
+        rgb_t bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_GREEN); // Default to Green
         // Check if we are plugged in
         if (gpio_read_pin(BT_CABLE_PIN)) {
-            if (gpio_read_pin(BT_CHARGE_PIN)) {
-                // Pin is high, fully charged
-                rgb_t green = hsv_to_matrix_adjusted_rgb(HSV_GREEN);
-                rgb_matrix_set_color(0, green.r, green.g, green.b);
-            } else {
-                // Pin is low, charging
-                rgb_t red = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
-                rgb_matrix_set_color(0, red.r, red.g, red.b);
+            // We are plugged in
+            if (!gpio_read_pin(BT_CHARGE_PIN)) {
+                bat_rgb = hsv_to_matrix_adjusted_rgb(0, 255, blink_index); // Pleasently blinking RED
             }
         } else {
-            // @todo(emolitor) use md_getp_bat to implement battery level
-            rgb_matrix_set_color(0, 0, 0, 0);
+            // We are not plugged in
+            //uint8_t battery_level = *md_getp_bat();
+
+            //if (battery_level < BATTERY_CAPACITY_LOW) {
+            //    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_RED);
+            //} else if (battery_level < BATTERY_CAPACITY_MEDIUM) {
+            //    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_YELLOW);
+            //} else if (battery_level < BATTERY_CAPACITY_HIGH) {
+            //    bat_rgb = hsv_to_matrix_adjusted_rgb(HSV_BLUE);
+            //}
         }
+
+        rgb_matrix_set_color(0, bat_rgb.r, bat_rgb.g, bat_rgb.b);
     }
 
 #    ifdef WIRELESS_ENABLE
@@ -396,46 +380,6 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
     }
 
     return true;
-}
-
-
-void md_devs_change(uint8_t devs, bool reset) {
-
-    switch (devs) {
-        case DEVS_USB: {
-            md_send_devctrl(MD_SND_CMD_DEVCTRL_USB);
-        } break;
-        case DEVS_2G4: {
-            if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
-            } else {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_2G4);
-            }
-        } break;
-        case DEVS_BT1: {
-            if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
-            } else {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_BT1);
-            }
-        } break;
-        case DEVS_BT2: {
-            if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
-            } else {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_BT2);
-            }
-        } break;
-        case DEVS_BT3: {
-            if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
-            } else {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_BT3);
-            }
-        } break;
-        default:
-            break;
-    }
 }
 
 #endif
@@ -516,11 +460,6 @@ void wireless_send_nkro(report_nkro_t *report) {
         memset(&temp_report_keyboard, 0, sizeof(temp_report_keyboard));
     }
 #endif
-    void wireless_task(void);
-    bool smsg_is_busy(void);
-    while(smsg_is_busy()) {
-        wireless_task();
-    }
     extern host_driver_t wireless_driver;
     wireless_driver.send_keyboard(&temp_report_keyboard);
     md_send_nkro(wls_report_nkro);
