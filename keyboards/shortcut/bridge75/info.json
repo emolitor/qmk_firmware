@@ -2,7 +2,7 @@
     "manufacturer": "Shortcut",
     "keyboard_name": "Bridge75",
     "maintainer": "emolitor@github",
-    "url": "https://github.com/emolitor",
+    "url": "https://shortcutofficial.com",
     "processor": "WB32FQ95",
     "bootloader": "wb32-dfu",
     "build": {

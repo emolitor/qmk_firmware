@@ -15,9 +15,13 @@ typedef union {
 confinfo_t confinfo;
 
 uint32_t post_init_timer = 0x00;
+
+#ifdef RGB_MATRIX_ENABLE
 uint8_t  blink_index     = 0;
 bool     blink_fast      = true;
 bool     blink_slow      = true;
+bool     rgb_override    = false;
+#endif
 
 // Expose md_send_devinfo to support the Bridge75 Bluetooth naming quirk
 // See the readme.md for more information about the quirk.
@@ -37,7 +41,7 @@ uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
         case LT(0, KC_2G4):
             return WIRELESS_TAPPING_TERM;
         case LT(0, KC_NO):
-            return WIRELESS_TAPPING_TERM;
+            return TAPPING_TERM;
         default:
             return TAPPING_TERM;
     }
@@ -160,6 +164,28 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     }
 
     switch (keycode) {
+        #ifdef RGB_MATRIX_ENABLE
+        case MO(1): {
+            // Enable RGB temporarily when FN is pressed to show indicators
+            if (record->event.pressed && !rgb_matrix_is_enabled()) {
+                rgb_override = true;
+                rgb_matrix_toggle_noeeprom();
+                rgb_matrix_sethsv_noeeprom(HSV_OFF);
+            } else if (rgb_override) {
+                rgb_override = false;
+                rgb_matrix_toggle_noeeprom();
+            }
+            return true;
+        }
+        case RGB_TOG: {
+            // Restore indicators if in overriden state
+            if (rgb_override) {
+                rgb_override = false;
+                rgb_matrix_reload_from_eeprom();
+            }
+            return true;
+        }
+        #endif
         case EE_CLR: {
             // Only reset the eeprom on keypress to avoid repeating eeprom
             // clear if held down.
@@ -357,3 +383,8 @@ void board_init(void) {
     gpio_write_pin_low(WS2812_DI_PIN);
 }
 #endif
+
+// Experimental change for force MCU reset on unhandled_exception
+void _unhandled_exception(void) {
+    mcu_reset();
+}
