@@ -4,7 +4,6 @@
 
 #include "quantum.h"
 #include "wireless.h"
-#include "smsg.h"
 
 #ifndef WLS_INQUIRY_BAT_TIME
 #    define WLS_INQUIRY_BAT_TIME 3000
@@ -141,12 +140,6 @@ void wireless_send_nkro(report_nkro_t *report) {
         }
     } else {
         memset(&temp_report_keyboard, 0, sizeof(temp_report_keyboard));
-    }
-#endif
-
-#ifdef AGGRESSIVE_WIRELESS_TASK
-    while(smsg_is_busy()) {
-        wireless_task();
     }
 #endif
 

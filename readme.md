@@ -1,3 +1,29 @@
+# Quantum Mechanical Keyboard Wireless Fork
+This is a fork of the Quantum Mechanical Keyboard Firmware adding support
+for Westberry based wireless keyboards. These keyboards are based on a
+multichip solution coupling a WB32 MCU with a CH582F chip providing the
+wireless connectivity. The chips communicate via UART and there are several
+variations each with slightly different protocols. All of these variations
+make it complicated to upstream a solution. The intent of this fork is to
+provide a modern version of QMK for these keyboards as well as to experiment
+consolidating the variations into a well formed and supportable code base
+which can be upstreamed. This fork does not and will not contain any binary
+blobs and is fully compliant with the upstream license used by QMK.
+
+The following keyboards are currently supported by this repository.
+* [Shortcut Studios Bridge75](keyboards/shortcut/bridge75/)
+* [Neo Studios Neo65](keyboards/neo/neo65_trimode/)
+
+This is a community supported repository with special thanks to Kasper at 
+[MONACOKEYS](https://monacokeys.de) who provided some spare boards and endless
+time testing the initial port of the Bridge75. And to
+[SHORTCUT STUDIO](https://shortcutofficial.com) for publishing the inital
+source code for the Bridge75 and providing an ANSI Bridge75 PCB for
+development as well testing and validating the initial Bridge75 port. And to
+[Neo Studio](https://www.instagram.com/ne0_kb) for providing PCBs of their
+boards.
+
+
 # Quantum Mechanical Keyboard Firmware
 
 [![Current Version](https://img.shields.io/github/tag/qmk/qmk_firmware.svg)](https://github.com/qmk/qmk_firmware/tags)
