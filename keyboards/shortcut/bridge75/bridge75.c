@@ -20,6 +20,9 @@ uint8_t  blink_index     = 0;
 bool     blink_fast      = true;
 bool     blink_slow      = true;
 bool     rgb_override    = false;
+bool     charge_state    = true;
+uint8_t  charge_counter  = 0;
+#define CHARGE_STABLE_CYCLES 10
 
 // Expose md_send_devinfo to support the Bridge75 Bluetooth naming quirk
 // See the readme.md for more information about the quirk.
@@ -308,6 +311,20 @@ void connection_indicators(void) {
     }
 }
 
+
+bool is_charge_stable(bool current_charge_state) {
+    if (current_charge_state == charge_state) {
+        if (charge_counter < CHARGE_STABLE_CYCLES) {
+            charge_counter++;
+        }
+    } else {
+        charge_counter = 0;
+        charge_state = current_charge_state;
+    }
+
+    return charge_counter >= CHARGE_STABLE_CYCLES;
+}
+
 bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
     blink_index = blink_index + 1;
     blink_fast  = (blink_index % 64 == 0) ? !blink_fast : blink_fast;
@@ -331,18 +348,22 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             }
         }
 
-        // Check if we are plugged in
-        if (gpio_read_pin(BT_CABLE_PIN)) {
-            // We are plugged in
-            if (!gpio_read_pin(BT_CHARGE_PIN)) {
-                // We are charging blink red
-                blink(ESCAPE_INDEX, RGB_ADJ_RED, blink_slow);
-            } else {
-                // We are fully charged solid green
-                rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_GREEN);
+        uint8_t bat_level = *md_getp_bat();
+
+        // Check if we are plugged in and we are not at 100%
+        if (gpio_read_pin(BT_CABLE_PIN) && bat_level != 100) {
+            bool current_charge_state = gpio_read_pin(BT_CHARGE_PIN);
+
+            if (is_charge_stable(current_charge_state)) {
+                if (charge_state) {
+                    // We are fully charged solid green
+                    rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_GREEN);
+                } else {
+                    // We are charging blink red
+                    blink(ESCAPE_INDEX, RGB_ADJ_RED, blink_slow);
+                }
             }
         } else {
-            uint8_t bat_level = *md_getp_bat();
             if (bat_level > 90) {
                 rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_GREEN);
             } else if (bat_level > 50) {
