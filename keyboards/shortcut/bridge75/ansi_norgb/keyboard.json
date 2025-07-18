@@ -8,6 +8,7 @@
     },
     "rgb_matrix": {
         "default": {
+            "on": false,
             "animation": "solid_color",
             "hue": 0,
             "sat": 0,
