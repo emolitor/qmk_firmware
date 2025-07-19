@@ -19,11 +19,13 @@ confinfo_t confinfo;
 
 uint32_t post_init_timer = 0x00;
 
-uint8_t blink_index  = 0;
-bool    blink_fast   = true;
-bool    blink_slow   = true;
-bool    rgb_override = false;
-bool    mac_mode     = false;
+uint8_t blink_index    = 0;
+bool    blink_fast     = true;
+bool    blink_slow     = true;
+bool    rgb_override   = false;
+bool    mac_mode       = false;
+bool    charging_state = false;
+bool    bat_full_flag  = false;
 
 // Expose md_send_devinfo to support the Bridge75 Bluetooth naming quirk
 // See the readme.md for more information about the quirk.
@@ -369,9 +371,9 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
         }
 
         // Check if we are plugged in
-        if (gpio_read_pin(BT_CABLE_PIN)) {
+        if (charging_state) {
             // We are plugged in
-            if (!gpio_read_pin(BT_CHARGE_PIN)) {
+            if (!bat_full_flag) {
                 // We are charging blink red
                 blink(ESCAPE_INDEX, RGB_ADJ_RED, blink_slow);
             } else {
@@ -434,12 +436,13 @@ void _unhandled_exception(void) {
     mcu_reset();
 }
 
+/*
 // Exprimental change to fix duplicate and hung key presses on wireless
 void wireless_send_nkro(report_nkro_t *report) {
     static report_keyboard_t temp_report_keyboard                 = {0};
     uint8_t                  wls_report_nkro[MD_SND_CMD_NKRO_LEN] = {0};
 
-    if(MD_STATE_PAIRING == *md_getp_state()){
+    if (MD_STATE_PAIRING == *md_getp_state()) {
         return;
     }
 
@@ -453,10 +456,10 @@ void wireless_send_nkro(report_nkro_t *report) {
             key_count += __builtin_popcount(temp_report_nkro.bits[i]);
         }
 
-        /*
-         * Use NKRO for sending when more than 6 keys are pressed
-         * to solve the issue of the lack of a protocol flag in wireless mode.
-         */
+        //
+        // Use NKRO for sending when more than 6 keys are pressed
+        // to solve the issue of the lack of a protocol flag in wireless mode.
+        //
 
         for (uint8_t i = 0; i < key_count; i++) {
             uint8_t usageid;
@@ -526,9 +529,33 @@ void wireless_send_nkro(report_nkro_t *report) {
     wireless_driver.send_keyboard(&temp_report_keyboard);
     md_send_nkro(wls_report_nkro);
 }
+*/
 
 void lpwr_clock_enable_user(void) {
     if (confinfo.deep_sleep_fix) {
         mcu_reset();
+    }
+}
+
+void housekeeping_task_user(void) {
+    uint8_t hs_now_mode;
+    static uint32_t hs_current_time;
+    //static bool val_value = false;
+
+    charging_state = gpio_read_pin(BT_CABLE_PIN);
+    bat_full_flag = gpio_read_pin(BT_CHARGE_PIN);
+
+        if (charging_state && (bat_full_flag)) {
+        hs_now_mode = MD_SND_CMD_DEVCTRL_CHARGING_DONE;
+    } else if (charging_state) {
+        hs_now_mode = MD_SND_CMD_DEVCTRL_CHARGING;
+    } else {
+        hs_now_mode = MD_SND_CMD_DEVCTRL_CHARGING_STOP;
+    }
+
+    if (!hs_current_time || timer_elapsed32(hs_current_time) > 1000) {
+        hs_current_time = timer_read32();
+        md_send_devctrl(hs_now_mode);
+        md_send_devctrl(MD_SND_CMD_DEVCTRL_INQVOL);
     }
 }

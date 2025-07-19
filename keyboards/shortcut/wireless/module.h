@@ -47,9 +47,11 @@ enum {
     MD_SND_CMD_MANUFACTURER = 0xAB,
     MD_SND_CMD_PRODUCT      = 0xAC,
     MD_SND_CMD_VPID         = 0xAD,
-    MD_SND_CMD_RAW          = 0x91,
+    MD_SND_CMD_RAW          = 0xAF,
+    MD_SND_CMD_RAW_IN       = 0x61,
     /* device ctrl */
     MD_SND_CMD_DEVCTRL                    = 0xA6,
+    MD_SND_CMD_DEVCTRL_BAT                = 0xA7,
     MD_SND_CMD_DEVCTRL_USB                = 0x11,
     MD_SND_CMD_DEVCTRL_2G4                = 0x30,
     MD_SND_CMD_DEVCTRL_BT1                = 0x31,
@@ -77,7 +79,8 @@ enum {
 };
 
 enum {
-    MD_REV_CMD_RAW                  = 0x81,
+    MD_REV_CMD_RAW                  = 0xAF,
+    MD_REV_CMD_RAW_OUT              = 0x60,
     MD_REV_CMD_INDICATOR            = 0x5A,
     MD_REV_CMD_DEVCTRL              = 0x5B,
     MD_REV_CMD_DEVCTRL_BAT_LOW      = 0x21, // unused
@@ -99,6 +102,12 @@ enum {
     MD_REV_CMD_HOST_STATE_RESUME    = 0x01,
 };
 
+enum {
+    BURST                           = 0xB2,
+    CONTINUE                        = 0xB3,
+    STOP                            = 0xB4,
+};
+
 void md_init(void);
 void md_main_task(void);
 void md_send_kb(uint8_t *data);
@@ -112,7 +121,7 @@ void md_send_manufacturer(char *str, uint8_t len);
 void md_send_product(char *str, uint8_t len);
 void md_send_vpid(uint16_t vid, uint16_t pid);
 void md_send_raw(uint8_t *data, uint8_t length);
-bool md_send_pkt(uint8_t *data, uint32_t len);
+void md_send_pkt(uint8_t *data, uint32_t len);
 bool md_receive_process_user(uint8_t *pdata, uint8_t len);
 void md_devs_change(uint8_t devs, bool reset);
 bool md_inquire_bat(void);
@@ -120,3 +129,6 @@ uint8_t md_get_version(void);
 uint8_t *md_getp_state(void);
 uint8_t *md_getp_bat(void);
 uint8_t *md_getp_indicator(void);
+void md_rf_send_carrier(uint8_t channel, uint8_t tx_power, uint8_t phy);
+void md_rf_send_stop(void);
+void md_send_devctrl_bat(uint8_t cmd);

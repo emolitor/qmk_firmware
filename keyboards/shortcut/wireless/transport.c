@@ -14,6 +14,7 @@ extern host_driver_t chibios_driver;
 extern host_driver_t wireless_driver;
 
 static transport_t transport = TRANSPORT_USB;
+bool temp;
 
 void wls_transport_enable(bool enable) __attribute__((weak));
 void wls_transport_enable(bool enable) {
@@ -58,10 +59,8 @@ void usb_transport_enable(bool enable) {
         }
     } else {
         if (USB_DRIVER.state == USB_ACTIVE) {
-            report_keyboard_t empty_report = {0};
-            report_nkro_t empty_nkro_report = {0};
-            host_keyboard_send(&empty_report);
-            host_nkro_send(&empty_nkro_report);
+            chibios_driver.send_keyboard(NULL);
+            chibios_driver.send_nkro(NULL);
         }
 
 #if !defined(KEEP_USB_CONNECTION_IN_WIRELESS_MODE)
@@ -74,19 +73,21 @@ void usb_transport_enable(bool enable) {
 
 void set_transport(transport_t new_transport) {
 
-    transport = new_transport;
+    if (transport != new_transport) {
+        transport = new_transport;
 
-    switch (transport) {
-        case TRANSPORT_USB: {
-            wls_transport_enable(false);
-            usb_transport_enable(true);
-        } break;
-        case TRANSPORT_WLS: {
-            usb_transport_enable(false);
-            wls_transport_enable(true);
-        } break;
-        default:
-            break;
+        switch (transport) {
+            case TRANSPORT_USB: {
+                wls_transport_enable(false);
+                usb_transport_enable(true);
+            } break;
+            case TRANSPORT_WLS: {
+                usb_transport_enable(false);
+                wls_transport_enable(true);
+            } break;
+            default:
+                break;
+        }
     }
 }
 
@@ -94,7 +95,7 @@ transport_t get_transport(void) {
 
     return transport;
 }
-
+uint32_t suspend_timer = 0x00;
 void usb_remote_wakeup(void) {
 
 #ifdef USB_REMOTE_USE_QMK
@@ -120,13 +121,15 @@ void usb_remote_wakeup(void) {
         /* Woken up */
     }
 #else
-    static uint32_t suspend_timer = 0x00;
 
     if ((USB_DRIVER.state == USB_SUSPENDED)) {
         if (!suspend_timer) suspend_timer = sync_timer_read32();
         if (sync_timer_elapsed32(suspend_timer) >= USB_POWER_DOWN_DELAY) {
             suspend_timer = 0x00;
-            suspend_power_down();
+            extern void lpwr_set_timeout_manual(bool enable);
+            temp = true;
+            // suspend_power_down();
+            lpwr_set_timeout_manual(true);
         }
     } else {
         suspend_timer = 0x00;

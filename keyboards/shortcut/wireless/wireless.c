@@ -9,11 +9,8 @@
 #    define WLS_INQUIRY_BAT_TIME 3000
 #endif
 
-#ifndef WLS_KEYBOARD_REPORT_KEYS
-#    define WLS_KEYBOARD_REPORT_KEYS KEYBOARD_REPORT_KEYS
-#endif
-
 static uint8_t wls_devs = DEVS_USB;
+bool im_test_rate_flag;
 
 void last_matrix_activity_trigger(void);
 
@@ -58,12 +55,9 @@ void wireless_send_keyboard(report_keyboard_t *report) {
         return;
     }
 
-    _Static_assert((MD_SND_CMD_KB_LEN) - (WLS_KEYBOARD_REPORT_KEYS) >= 2, "WLS_KEYBOARD_REPORT_KEYS cannot be greater than MD_SND_CMD_KB_LEN - 2.");
-
     if (report != NULL) {
-        memcpy(wls_report_kb, (uint8_t *)&report->mods, WLS_KEYBOARD_REPORT_KEYS + 2);
+        memcpy(wls_report_kb, (uint8_t *)report, sizeof(wls_report_kb));
     }
-
     md_send_kb(wls_report_kb);
 }
 
@@ -76,8 +70,6 @@ void wireless_send_nkro(report_nkro_t *report) {
         return;
     }
 
-
-#ifdef NKRO_ENABLE
     if (*md_getp_state() != MD_STATE_CONNECTED) {
         wireless_devs_change(wls_devs, wls_devs, false);
         return;
@@ -93,21 +85,17 @@ void wireless_send_nkro(report_nkro_t *report) {
         }
 
         // find key up and del it.
-        uint8_t nkro_keys = key_count;
-        for (uint8_t i = 0; i < WLS_KEYBOARD_REPORT_KEYS && temp_report_keyboard.keys[i]; i++) {
-            report_nkro_t found_report_nkro;
+        for (uint8_t i = 0; i < KEYBOARD_REPORT_KEYS && temp_report_keyboard.keys[i]; i++) {
             uint8_t usageid = 0x00;
             uint8_t n;
 
-            found_report_nkro = temp_report_nkro;
-
-            for (uint8_t c = 0; c < nkro_keys; c++) {
-                for (n = 0; n < NKRO_REPORT_BITS && !found_report_nkro.bits[n]; n++) {}
-                usageid = (n << 3) | biton(found_report_nkro.bits[n]);
-                del_key_bit(&found_report_nkro, usageid);
+            for (uint8_t c = 0; c < key_count; c++) {
+                for (n = 0; n < NKRO_REPORT_BITS && !temp_report_nkro.bits[n]; n++) {}
+                usageid = (n << 3) | biton(temp_report_nkro.bits[n]);
+#ifdef NKRO_ENABLE
+                del_key_bit(&temp_report_nkro, usageid);
+#endif
                 if (usageid == temp_report_keyboard.keys[i]) {
-                    del_key_bit(&temp_report_nkro, usageid);
-                    nkro_keys--;
                     break;
                 }
             }
@@ -130,9 +118,11 @@ void wireless_send_nkro(report_nkro_t *report) {
 
             for (n = 0; n < NKRO_REPORT_BITS && !temp_report_nkro.bits[n]; n++) {}
             usageid = (n << 3) | biton(temp_report_nkro.bits[n]);
+#ifdef NKRO_ENABLE
             del_key_bit(&temp_report_nkro, usageid);
+#endif
 
-            for (idx = 0; idx < WLS_KEYBOARD_REPORT_KEYS; idx++) {
+            for (idx = 0; idx < KEYBOARD_REPORT_KEYS; idx++) {
                 if (temp_report_keyboard.keys[idx] == usageid) {
                     break;
                 }
@@ -142,22 +132,23 @@ void wireless_send_nkro(report_nkro_t *report) {
                 }
             }
 
-            if (idx == WLS_KEYBOARD_REPORT_KEYS && (usageid < (MD_SND_CMD_NKRO_LEN * 8))) {
+            if (idx == KEYBOARD_REPORT_KEYS && (usageid < (MD_SND_CMD_NKRO_LEN * 8))) {
                 wls_report_nkro[usageid / 8] |= 0x01 << (usageid % 8);
             }
         }
     } else {
         memset(&temp_report_keyboard, 0, sizeof(temp_report_keyboard));
     }
-#endif
 
-    wireless_driver.send_keyboard(&temp_report_keyboard);
+    // wireless_driver.send_keyboard(&temp_report_keyboard);
+    while(smsg_is_busy()) wireless_task();
+    host_keyboard_send(&temp_report_keyboard);
     md_send_nkro(wls_report_nkro);
 }
 
 void wireless_send_mouse(report_mouse_t *report) __attribute__((weak));
 void wireless_send_mouse(report_mouse_t *report) {
-
+    
     if(MD_STATE_PAIRING == *md_getp_state()){
         return;
     }
@@ -248,6 +239,43 @@ uint8_t wireless_get_current_devs(void) {
     return wls_devs;
 }
 
+void usb_mode_test_report_task(void) {
+    extern void host_mouse_send(report_mouse_t * report);
+
+    static uint8_t flip                = 0;
+    static report_mouse_t mouse_format = {0};
+
+    switch (flip) {
+        case 0: { 
+            mouse_format.x = 10;
+            mouse_format.y = 0;
+            host_mouse_send(&mouse_format);
+            flip = 1;
+        } break;
+        case 1: { 
+            mouse_format.x = 0;
+            mouse_format.y = -10;
+            host_mouse_send(&mouse_format);
+            flip = 2;
+        } break;
+        case 2: { 
+            mouse_format.x = -10;
+            mouse_format.y = 0;
+            host_mouse_send(&mouse_format);
+            flip = 3;
+        } break;
+        case 3: { 
+            mouse_format.x = 0;
+            mouse_format.y = 10;
+            host_mouse_send(&mouse_format);
+            flip = 0;
+        } break;
+        default: {
+            flip = 0;
+        } break;
+    }
+}
+
 void wireless_pre_task(void) __attribute__((weak));
 void wireless_pre_task(void) {}
 
@@ -278,6 +306,6 @@ void wireless_task(void) {
 }
 
 void housekeeping_task_kb(void) {
-
+    if (wireless_get_current_devs() == DEVS_USB && im_test_rate_flag) usb_mode_test_report_task();
     wireless_task();
 }
