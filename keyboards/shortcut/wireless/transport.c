@@ -14,7 +14,6 @@ extern host_driver_t chibios_driver;
 extern host_driver_t wireless_driver;
 
 static transport_t transport = TRANSPORT_USB;
-bool temp;
 
 void wls_transport_enable(bool enable) __attribute__((weak));
 void wls_transport_enable(bool enable) {
@@ -127,7 +126,6 @@ void usb_remote_wakeup(void) {
         if (sync_timer_elapsed32(suspend_timer) >= USB_POWER_DOWN_DELAY) {
             suspend_timer = 0x00;
             extern void lpwr_set_timeout_manual(bool enable);
-            temp = true;
             // suspend_power_down();
             lpwr_set_timeout_manual(true);
         }

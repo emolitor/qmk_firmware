@@ -19,13 +19,11 @@ confinfo_t confinfo;
 
 uint32_t post_init_timer = 0x00;
 
-uint8_t blink_index    = 0;
-bool    blink_fast     = true;
-bool    blink_slow     = true;
-bool    rgb_override   = false;
-bool    mac_mode       = false;
-bool    charging_state = false;
-bool    bat_full_flag  = false;
+uint8_t blink_index  = 0;
+bool    blink_fast   = true;
+bool    blink_slow   = true;
+bool    rgb_override = false;
+bool    mac_mode     = false;
 
 // Expose md_send_devinfo to support the Bridge75 Bluetooth naming quirk
 // See the readme.md for more information about the quirk.
@@ -371,9 +369,9 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
         }
 
         // Check if we are plugged in
-        if (charging_state) {
+        if (gpio_read_pin(BT_CABLE_PIN)) {
             // We are plugged in
-            if (!bat_full_flag) {
+            if (!gpio_read_pin(BT_CHARGE_PIN)) {
                 // We are charging blink red
                 blink(ESCAPE_INDEX, RGB_ADJ_RED, blink_slow);
             } else {
@@ -534,28 +532,5 @@ void wireless_send_nkro(report_nkro_t *report) {
 void lpwr_clock_enable_user(void) {
     if (confinfo.deep_sleep_fix) {
         mcu_reset();
-    }
-}
-
-void housekeeping_task_user(void) {
-    uint8_t hs_now_mode;
-    static uint32_t hs_current_time;
-    //static bool val_value = false;
-
-    charging_state = gpio_read_pin(BT_CABLE_PIN);
-    bat_full_flag = gpio_read_pin(BT_CHARGE_PIN);
-
-        if (charging_state && (bat_full_flag)) {
-        hs_now_mode = MD_SND_CMD_DEVCTRL_CHARGING_DONE;
-    } else if (charging_state) {
-        hs_now_mode = MD_SND_CMD_DEVCTRL_CHARGING;
-    } else {
-        hs_now_mode = MD_SND_CMD_DEVCTRL_CHARGING_STOP;
-    }
-
-    if (!hs_current_time || timer_elapsed32(hs_current_time) > 1000) {
-        hs_current_time = timer_read32();
-        md_send_devctrl(hs_now_mode);
-        md_send_devctrl(MD_SND_CMD_DEVCTRL_INQVOL);
     }
 }

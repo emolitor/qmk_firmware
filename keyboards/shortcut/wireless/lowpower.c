@@ -152,15 +152,6 @@ bool lpwr_is_allow_timeout(void) {
 
 bool lpwr_is_allow_presleep_hook(void) __attribute__((weak));
 bool lpwr_is_allow_presleep_hook(void) {
-    extern bool charging_state;
-    if ((wireless_get_current_devs() == DEVS_USB) && (!charging_state)) {
-
-        if (USB_DRIVER.state != USB_STOP) {
-            usb_power_disconnect();
-            usbDisconnectBus(&USBD1);
-            usbStop(&USBD1);
-        }
-    }
     return true;
 }
 
@@ -201,12 +192,6 @@ bool lpwr_is_allow_stop(void) {
 
 bool lpwr_is_allow_wakeup_hook(void) __attribute__((weak));
 bool lpwr_is_allow_wakeup_hook(void) {
-    if (wireless_get_current_devs() == DEVS_USB && USB_DRIVER.state == USB_STOP)
-    {
-        usb_power_connect();
-        restart_usb_driver(&USBD1);
-        wireless_devs_change(!DEVS_USB, DEVS_USB, false);
-    }
     return true;
 }
 
