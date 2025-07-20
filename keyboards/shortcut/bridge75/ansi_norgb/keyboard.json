@@ -8,14 +8,9 @@
     },
     "rgb_matrix": {
         "default": {
-            "on": false,
-            "animation": "solid_color",
             "hue": 0,
             "sat": 0,
             "val": 0
-        },
-        "animations": {
-            "solid_color": true
         },
         "layout": [
             { "flags": 1,"x":  12, "y": 38},

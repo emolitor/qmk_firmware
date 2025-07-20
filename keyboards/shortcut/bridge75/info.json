@@ -63,9 +63,6 @@
         "pin": "B10"
     },
     "rgb_matrix": {
-        "driver": "ws2812",
-        "default": {
-            "val": 150
-        }
+        "driver": "ws2812"
     }
 }

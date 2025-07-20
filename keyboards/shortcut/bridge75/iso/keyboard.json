@@ -8,7 +8,8 @@
     },
     "rgb_matrix": {
         "default": {
-            "animation": "cycle_left_right"
+            "animation": "cycle_left_right",
+            "val": 150
         },
         "animations": {
             "breathing": true,
