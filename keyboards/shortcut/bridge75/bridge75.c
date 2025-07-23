@@ -19,6 +19,7 @@ confinfo_t confinfo;
 
 uint32_t post_init_timer = 0x00;
 
+uint8_t bat_level    = 0;
 uint8_t blink_index  = 0;
 bool    blink_fast   = true;
 bool    blink_slow   = true;
@@ -345,6 +346,10 @@ void connection_indicators(void) {
     }
 }
 
+void battery_percent_changed_kb(uint8_t level) {
+    bat_level = level;
+}
+
 bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
     blink_index = blink_index + 1;
     blink_fast  = (blink_index % 64 == 0) ? !blink_fast : blink_fast;
@@ -368,26 +373,21 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             }
         }
 
-        // Check if we are plugged in
-        if (gpio_read_pin(BT_CABLE_PIN)) {
-            // We are plugged in
-            if (!gpio_read_pin(BT_CHARGE_PIN)) {
-                // We are charging blink red
-                blink(ESCAPE_INDEX, RGB_ADJ_RED, blink_slow);
-            } else {
-                // We are fully charged solid green
-                rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_GREEN);
-            }
+        if (gpio_read_pin(BT_CABLE_PIN) && !gpio_read_pin(BT_CHARGE_PIN)) {
+            // Check if we are plugged in and charging
+            blink(ESCAPE_INDEX, RGB_ADJ_RED, blink_slow);
         } else {
-            uint8_t bat_level = *md_getp_bat();
             if (bat_level > 90) {
                 rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_GREEN);
             } else if (bat_level > 50) {
                 rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_BLUE);
             } else if (bat_level > 10) {
                 rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_YELLOW);
-            } else {
+            } else if (bat_level > 0) {
                 rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_RED);
+            } else {
+                // Only show battery if its actually been set
+                rgb_matrix_set_color(ESCAPE_INDEX, RGB_OFF);
             }
         }
 
