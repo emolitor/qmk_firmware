@@ -31,9 +31,9 @@ void wls_transport_enable(bool enable) {
     }
 }
 
-/* Control USB device connection and disconnection by
- * controlling the power supply of the USB DP pull-up resistor.
- * Overwrite these two functions. */
+// Control USB device connection and disconnection by
+// controlling the power supply of the USB DP pull-up resistor.
+// Overwrite these two functions.
 void usb_power_connect(void) __attribute__((weak));
 void usb_power_connect(void) {}
 
@@ -46,7 +46,7 @@ void usb_transport_enable(bool enable) {
         if (host_get_driver() != &chibios_driver) {
             extern bool last_suspend_state;
 
-            /* This flag is not set to 1 with probability after usb restart */
+            // This flag is not set to 1 with probability after usb restart
             last_suspend_state = true;
 #if !defined(KEEP_USB_CONNECTION_IN_WIRELESS_MODE)
             usb_power_connect();
@@ -94,9 +94,9 @@ void     usb_remote_wakeup(void) {
     if (USB_DRIVER.state == USB_SUSPENDED) {
         dprintln("suspending keyboard");
         while (USB_DRIVER.state == USB_SUSPENDED) {
-            /* Do this in the suspended state */
+            // Do this in the suspended state
             suspend_power_down(); // on AVR this deep sleeps for 15ms
-            /* Remote wakeup */
+            // Remote wakeup
             if ((USB_DRIVER.status & 2U) && suspend_wakeup_condition()) {
                 usbWakeupHost(&USB_DRIVER);
 #    if USB_SUSPEND_WAKEUP_DELAY > 0
@@ -110,7 +110,7 @@ void     usb_remote_wakeup(void) {
 #    endif
             }
         }
-        /* Woken up */
+        // Woken up
     }
 #else
 
