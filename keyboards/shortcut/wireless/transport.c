@@ -128,6 +128,7 @@ void     usb_remote_wakeup(void) {
 #endif
 }
 
+/*
 #ifndef USB_REMOTE_USE_QMK
 void usb_remote_host(void) {
     if (USB_DRIVER.state == USB_SUSPENDED) {
@@ -158,3 +159,4 @@ bool process_action_kb(keyrecord_t *record) {
     return true;
 }
 #endif
+*/
