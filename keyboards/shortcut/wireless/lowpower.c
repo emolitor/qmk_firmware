@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "quantum.h"
-#include "wireless.h"
+#include "wb_bluetooth.h"
 #include "usb_main.h"
 
 #ifndef LPWR_TIMEOUT

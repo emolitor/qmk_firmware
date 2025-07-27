@@ -10,14 +10,10 @@ ifeq ($(strip $(WIRELESS_ENABLE)), yes)
     VPATH += $(WIRELESS_DIR)
 
     SRC += \
-        $(WIRELESS_DIR)/wireless.c \
+	    $(WIRELESS_DIR)/wb_bluetooth.c \
         $(WIRELESS_DIR)/lowpower.c \
         $(WIRELESS_DIR)/smsg.c \
         $(WIRELESS_DIR)/module.c
-
-	ifeq ($(strip $(BLUETOOTH_ENABLE)), yes)
-        SRC += $(WIRELESS_DIR)/bluetooth.c
-    endif
 
     ifeq ($(strip $(WIRELESS_LPWR_STOP_ENABLE)), yes)
         OPT_DEFS += -DWIRELESS_LPWR_STOP_ENABLE
