@@ -242,11 +242,11 @@ uint8_t wireless_get_current_devs(void) {
     return wls_devs;
 }
 
-void wireless_pre_task(void) __attribute__((weak));
-void wireless_pre_task(void) {}
+//void wireless_pre_task(void) __attribute__((weak));
+//void wireless_pre_task(void) {}
 
-void wireless_post_task(void) __attribute__((weak));
-void wireless_post_task(void) {}
+//void wireless_post_task(void) __attribute__((weak));
+//void wireless_post_task(void) {}
 
 /*
 void wireless_task(void) {

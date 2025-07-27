@@ -34,11 +34,11 @@
 
 // TODO: Remove after refactoring
 void    md_send_devinfo(const char *name);
-uint8_t wireless_keyboard_leds(void);
-void    wireless_send_keyboard(report_keyboard_t *report);
-void    wireless_send_nkro(report_nkro_t *report);
-void    wireless_send_mouse(report_mouse_t *report);
-void    wireless_send_extra(report_extra_t *report);
+//uint8_t wireless_keyboard_leds(void);
+//void    wireless_send_keyboard(report_keyboard_t *report);
+//void    wireless_send_nkro(report_nkro_t *report);
+//void    wireless_send_mouse(report_mouse_t *report);
+//void    wireless_send_extra(report_extra_t *report);
 
 void bluetooth_init(void) {
     // wireless_init();
