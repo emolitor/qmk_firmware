@@ -33,11 +33,6 @@
 
 // TODO: Remove after refactoring
 void    md_send_devinfo(const char *name);
-//uint8_t wireless_keyboard_leds(void);
-//void    wireless_send_keyboard(report_keyboard_t *report);
-//void    wireless_send_nkro(report_nkro_t *report);
-//void    wireless_send_mouse(report_mouse_t *report);
-//void    wireless_send_extra(report_extra_t *report);
 
 void bluetooth_init(void) {
     // wireless_init();
@@ -86,16 +81,10 @@ uint8_t bluetooth_keyboard_leds(void) {
 }
 
 void bluetooth_send_keyboard(report_keyboard_t *report) {
-    // wireless_send_keyboard(report); // TODO Refactor
     if (MD_STATE_PAIRING == *md_getp_state()) {
         return;
     }
     uint8_t wls_report_kb[MD_SND_CMD_KB_LEN] = {0};
-
-    // if (*md_getp_state() != MD_STATE_CONNECTED) {
-    //     wireless_devs_change(wls_devs, wls_devs, false);
-    //     return;
-    // }
 
     if (report != NULL) {
         memcpy(wls_report_kb, (uint8_t *)report, sizeof(wls_report_kb));
@@ -104,18 +93,12 @@ void bluetooth_send_keyboard(report_keyboard_t *report) {
 }
 
 void bluetooth_send_nkro(report_nkro_t *report) {
-    // wireless_send_nkro(report); // TODO Refactor
     static report_keyboard_t temp_report_keyboard                 = {0};
     uint8_t                  wls_report_nkro[MD_SND_CMD_NKRO_LEN] = {0};
 
     if (MD_STATE_PAIRING == *md_getp_state()) {
         return;
     }
-
-    // if (*md_getp_state() != MD_STATE_CONNECTED) {
-    //     wireless_devs_change(wls_devs, wls_devs, false);
-    //     return;
-    // }
 
     if (report != NULL) {
         report_nkro_t temp_report_nkro = *report;
@@ -184,9 +167,7 @@ void bluetooth_send_nkro(report_nkro_t *report) {
         memset(&temp_report_keyboard, 0, sizeof(temp_report_keyboard));
     }
 
-    // wireless_driver.send_keyboard(&temp_report_keyboard);
     while (smsg_is_busy()) {
-        //wireless_task();
         bluetooth_task();
     }
     host_keyboard_send(&temp_report_keyboard);
@@ -194,7 +175,6 @@ void bluetooth_send_nkro(report_nkro_t *report) {
 }
 
 void bluetooth_send_mouse(report_mouse_t *report) {
-    // wireless_send_mouse(report); // TODO Refactor
     if (MD_STATE_PAIRING == *md_getp_state()) {
         return;
     }
@@ -208,11 +188,6 @@ void bluetooth_send_mouse(report_mouse_t *report) {
     } __attribute__((packed)) wls_report_mouse_t;
 
     wls_report_mouse_t wls_report_mouse = {0};
-
-    // if (*md_getp_state() != MD_STATE_CONNECTED) {
-    //     wireless_devs_change(wls_devs, wls_devs, false);
-    //     return;
-    // }
 
     if (report != NULL) {
         wls_report_mouse.buttons = report->buttons;
