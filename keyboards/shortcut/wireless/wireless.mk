@@ -16,7 +16,6 @@ ifeq ($(strip $(WIRELESS_ENABLE)), yes)
         $(WIRELESS_DIR)/module.c
 
 	ifeq ($(strip $(BLUETOOTH_ENABLE)), yes)
-        #OPT_DEFS += -DWIRELESS_LPWR_STOP_ENABLE
         SRC += $(WIRELESS_DIR)/bluetooth.c
     endif
 
