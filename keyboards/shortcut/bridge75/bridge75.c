@@ -24,11 +24,6 @@ bool    blink_slow   = true;
 bool    rgb_override = false;
 bool    mac_mode     = false;
 
-// Expose wireless_task and smsg_is_busy to allow for more aggressive
-// wireless_task processing and to prevent sleep when smsg_is_busy.
-void wireless_task(void);
-bool smsg_is_busy(void);
-
 // We use per-key tapping term to allow the wireless keys to have a much
 // longer tapping term, therefore a longer hold, to match the default
 // firmware behaviour.
