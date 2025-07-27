@@ -31,37 +31,23 @@
 #    define WLS_INQUIRY_BAT_TIME 3000
 #endif
 
-// TODO: Remove after refactoring
-void    md_send_devinfo(const char *name);
-
 void bluetooth_init(void) {
-    // wireless_init();
     md_init();
     md_send_devinfo(MD_BT_NAME);
     wait_ms(10);
 }
 
 void bluetooth_task(void) {
-    // wireless_task(); // TODO Refactor
-    //wireless_pre_task();
     lpwr_task();
     md_main_task();
-    //wireless_post_task();
 
-    /* usb_remote_wakeup() should be invoked last so that we have chance
-     * to switch to wireless after start-up when usb is not connected
-     */
-    //if (get_transport() == TRANSPORT_USB) {
-    //    usb_remote_wakeup();
-    //} else if (lpwr_get_state() == LPWR_NORMAL) {
-        static uint32_t inqtimer = 0x00;
+    static uint32_t inqtimer = 0x00;
 
-        if (sync_timer_elapsed32(inqtimer) >= (WLS_INQUIRY_BAT_TIME)) {
-            if (md_inquire_bat()) {
-                inqtimer = sync_timer_read32();
-            }
+    if (sync_timer_elapsed32(inqtimer) >= (WLS_INQUIRY_BAT_TIME)) {
+        if (md_inquire_bat()) {
+            inqtimer = sync_timer_read32();
         }
-    //}
+    }
 }
 
 bool bluetooth_is_connected(void) {
@@ -131,10 +117,8 @@ void bluetooth_send_nkro(report_nkro_t *report) {
             }
         }
 
-        /*
-         * Use NKRO for sending when more than 6 keys are pressed
-         * to solve the issue of the lack of a protocol flag in wireless mode.
-         */
+        // Use NKRO for sending when more than 6 keys are pressed
+        // to solve the issue of the lack of a protocol flag in wireless mode.
 
         temp_report_nkro = *report;
 

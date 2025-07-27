@@ -17,18 +17,12 @@ typedef union {
 } confinfo_t;
 confinfo_t confinfo;
 
-uint32_t post_init_timer = 0x00;
-
 uint8_t bat_level    = 0;
 uint8_t blink_index  = 0;
 bool    blink_fast   = true;
 bool    blink_slow   = true;
 bool    rgb_override = false;
 bool    mac_mode     = false;
-
-// Expose md_send_devinfo to support the Bridge75 Bluetooth naming quirk
-// See the readme.md for more information about the quirk.
-//void md_send_devinfo(const char *name);
 
 // Expose wireless_task and smsg_is_busy to allow for more aggressive
 // wireless_task processing and to prevent sleep when smsg_is_busy.
@@ -89,11 +83,10 @@ void keyboard_post_init_kb(void) {
     }
     gpio_set_pin_output(USB_POWER_EN_PIN);
 
-    //wireless_init();
-    //md_send_devinfo(MD_BT_NAME);
-    //wait_ms(10);
+    md_send_devctrl(MD_SND_CMD_DEVCTRL_FW_VERSION);   // get the module fw version.
+    md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_BT_EN);  // timeout 30min to sleep in bt mode, enable
+    md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_2G4_EN); // timeout 30min to sleep in 2.4g mode, enable
     wireless_devs_change(!confinfo.devs, confinfo.devs, false);
-    post_init_timer = timer_read32();
 
     keyboard_post_init_user();
 }
@@ -131,16 +124,6 @@ bool lpwr_is_allow_timeout_hook(void) {
     }
 
     return true;
-}
-
-void wireless_post_task(void) {
-    if (post_init_timer && timer_elapsed32(post_init_timer) >= 100) {
-        md_send_devctrl(MD_SND_CMD_DEVCTRL_FW_VERSION);   // get the module fw version.
-        md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_BT_EN);  // timeout 30min to sleep in bt mode, enable
-        md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_2G4_EN); // timeout 30min to sleep in 2.4g mode, enable
-        wireless_devs_change(!confinfo.devs, confinfo.devs, false);
-        post_init_timer = 0x00;
-    }
 }
 
 void md_devs_change(uint8_t devs, bool reset) {

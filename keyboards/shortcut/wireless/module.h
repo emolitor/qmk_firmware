@@ -110,6 +110,7 @@ void md_send_system(uint8_t *data);
 void md_send_fn(uint8_t *data);
 void md_send_mouse(uint8_t *data);
 void md_send_devctrl(uint8_t cmd);
+void md_send_devinfo(const char *name);
 void md_send_manufacturer(char *str, uint8_t len);
 void md_send_product(char *str, uint8_t len);
 void md_send_vpid(uint16_t vid, uint16_t pid);
