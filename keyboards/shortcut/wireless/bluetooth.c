@@ -26,7 +26,6 @@
 #include "lowpower.h"
 #include "module.h"
 #include "smsg.h"
-#include "transport.h"
 
 #ifndef WLS_INQUIRY_BAT_TIME
 #    define WLS_INQUIRY_BAT_TIME 3000
@@ -57,9 +56,9 @@ void bluetooth_task(void) {
     /* usb_remote_wakeup() should be invoked last so that we have chance
      * to switch to wireless after start-up when usb is not connected
      */
-    if (get_transport() == TRANSPORT_USB) {
-        usb_remote_wakeup();
-    } else if (lpwr_get_state() == LPWR_NORMAL) {
+    //if (get_transport() == TRANSPORT_USB) {
+    //    usb_remote_wakeup();
+    //} else if (lpwr_get_state() == LPWR_NORMAL) {
         static uint32_t inqtimer = 0x00;
 
         if (sync_timer_elapsed32(inqtimer) >= (WLS_INQUIRY_BAT_TIME)) {
@@ -67,7 +66,7 @@ void bluetooth_task(void) {
                 inqtimer = sync_timer_read32();
             }
         }
-    }
+    //}
 }
 
 bool bluetooth_is_connected(void) {

@@ -4,8 +4,6 @@ WIRELESS_DIR = $(TOP_DIR)/keyboards/shortcut/wireless
 ifeq ($(strip $(WIRELESS_ENABLE)), yes)
     OPT_DEFS += -DWIRELESS_ENABLE -DNO_USB_STARTUP_CHECK
 
-    OPT_DEFS += -include $(WIRELESS_DIR)/md_raw.h
-
     UART_DRIVER_REQUIRED ?= yes
     WIRELESS_LPWR_STOP_ENABLE ?= yes
 
@@ -15,7 +13,6 @@ ifeq ($(strip $(WIRELESS_ENABLE)), yes)
         $(WIRELESS_DIR)/wireless.c \
         $(WIRELESS_DIR)/transport.c \
         $(WIRELESS_DIR)/lowpower.c \
-        $(WIRELESS_DIR)/md_raw.c \
         $(WIRELESS_DIR)/smsg.c \
         $(WIRELESS_DIR)/module.c
 

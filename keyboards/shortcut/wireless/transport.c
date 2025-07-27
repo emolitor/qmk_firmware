@@ -85,9 +85,9 @@ void set_transport(transport_t new_transport) {
     }
 }
 
-transport_t get_transport(void) {
-    return transport;
-}
+//transport_t get_transport(void) {
+//    return transport;
+//}
 uint32_t suspend_timer = 0x00;
 void     usb_remote_wakeup(void) {
 #ifdef USB_REMOTE_USE_QMK
