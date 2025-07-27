@@ -11,8 +11,6 @@ typedef union {
     struct {
         uint8_t flag : 1;
         uint8_t devs : 3;
-        uint8_t deep_sleep_fix : 1;
-        uint8_t rgb_dont_sleep_on_usb_suspend : 1;
     };
 } confinfo_t;
 confinfo_t confinfo;
@@ -22,7 +20,6 @@ uint8_t blink_index  = 0;
 bool    blink_fast   = true;
 bool    blink_slow   = true;
 bool    rgb_override = false;
-bool    mac_mode     = false;
 
 // We use per-key tapping term to allow the wireless keys to have a much
 // longer tapping term, therefore a longer hold, to match the default
@@ -37,12 +34,6 @@ uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
             return WIRELESS_TAPPING_TERM;
         case LT(0, KC_2G4):
             return WIRELESS_TAPPING_TERM;
-        case LT(0, SLP_FIX):
-            return WIRELESS_TAPPING_TERM;
-        case LT(0, USBSLP):
-            return WIRELESS_TAPPING_TERM;
-        case LT(0, KC_NO):
-            return TAPPING_TERM;
         default:
             return TAPPING_TERM;
     }
@@ -51,8 +42,6 @@ uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
 void eeconfig_init_kb(void) {
     confinfo.flag                          = true;
     confinfo.devs                          = DEVS_USB;
-    confinfo.deep_sleep_fix                = true;
-    confinfo.rgb_dont_sleep_on_usb_suspend = false;
     eeconfig_update_kb(confinfo.raw);
     eeconfig_init_user();
 }
@@ -86,21 +75,8 @@ void keyboard_post_init_kb(void) {
     keyboard_post_init_user();
 }
 
-void usb_power_connect(void) {
-    gpio_write_pin_low(USB_POWER_EN_PIN);
-    wait_ms(5);
-}
-
-void usb_power_disconnect(void) {
-    gpio_write_pin_high(USB_POWER_EN_PIN);
-}
-
 void suspend_power_down_kb(void) {
-    if (!confinfo.rgb_dont_sleep_on_usb_suspend && confinfo.devs == DEVS_USB && gpio_read_pin(BT_CABLE_PIN)) {
-        rgb_matrix_disable_noeeprom();
-        gpio_write_pin_high(LED_POWER_EN_PIN);
-    }
-
+    gpio_write_pin_high(LED_POWER_EN_PIN);
     suspend_power_down_user();
 }
 
@@ -226,43 +202,6 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case LT(0, SLP_FIX): {
-            if (!record->tap.count && record->event.pressed) {
-                confinfo.deep_sleep_fix = !confinfo.deep_sleep_fix;
-                eeconfig_update_kb(confinfo.raw);
-            }
-            return false;
-        }
-        case LT(0, USBSLP): {
-            if (!record->tap.count && record->event.pressed) {
-                confinfo.rgb_dont_sleep_on_usb_suspend = !confinfo.rgb_dont_sleep_on_usb_suspend;
-                eeconfig_update_kb(confinfo.raw);
-            }
-            return false;
-        }
-#ifdef VIA_ENABLE
-        case LT(0, KC_NO): {
-            // Rather than using layers the default firmware uses dynamic key
-            // remapping to switch between WIN (Default) and MAC modes
-            if (!record->tap.count && record->event.pressed) {
-                if (dynamic_keymap_get_keycode(0, 5, 1) == KC_LALT) {
-                    // Switch to WIN mode (Default)
-                    dynamic_keymap_set_keycode(0, 5, 1, KC_LGUI);
-                    dynamic_keymap_set_keycode(0, 5, 2, KC_LALT);
-                    dynamic_keymap_set_keycode(0, 5, 9, KC_RALT);
-                    mac_mode = false;
-                } else if (dynamic_keymap_get_keycode(0, 5, 1) == KC_LGUI) {
-                    // Switch to MAC mode
-                    dynamic_keymap_set_keycode(0, 5, 1, KC_LALT);
-                    dynamic_keymap_set_keycode(0, 5, 2, KC_LGUI);
-                    dynamic_keymap_set_keycode(0, 5, 9, KC_RGUI);
-                    mac_mode = true;
-                }
-            } else if (record->event.pressed) {
-            }
-            return false;
-        }
-#endif
     }
 
     return true;
@@ -369,24 +308,6 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             }
         }
 
-#ifdef S_INDEX
-        if (confinfo.deep_sleep_fix) {
-            blink(S_INDEX, RGB_ADJ_RED, blink_slow);
-        }
-#endif
-
-#ifdef USBSLP_INDEX
-        if (confinfo.rgb_dont_sleep_on_usb_suspend) {
-            blink(USBSLP_INDEX, RGB_ADJ_WHITE, blink_slow);
-        }
-#endif
-
-#ifdef WIN_INDEX
-        if (mac_mode) {
-            blink(WIN_INDEX, RGB_ADJ_WHITE, blink_slow);
-        }
-#endif
-
         // Show active connection
         connection_indicators();
     } else if (confinfo.devs != DEVS_USB && *md_getp_state() != MD_STATE_CONNECTED) {
@@ -410,10 +331,4 @@ void board_init(void) {
 // Force MCU reset on unhandled_exception
 void _unhandled_exception(void) {
     mcu_reset();
-}
-
-void lpwr_clock_enable_user(void) {
-    if (confinfo.deep_sleep_fix) {
-        mcu_reset();
-    }
 }

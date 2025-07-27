@@ -63,6 +63,8 @@
         "pin": "B10"
     },
     "rgb_matrix": {
-        "driver": "ws2812"
+        "driver": "ws2812",
+        "sleep": true,
+        "timeout": 120000
     }
 }
