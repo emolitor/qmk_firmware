@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "lowpower.h"
 #include "module.h"
 #include "smsg.h"
 
