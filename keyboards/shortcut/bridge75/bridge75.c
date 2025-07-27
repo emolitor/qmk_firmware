@@ -28,7 +28,7 @@ bool    mac_mode     = false;
 
 // Expose md_send_devinfo to support the Bridge75 Bluetooth naming quirk
 // See the readme.md for more information about the quirk.
-void md_send_devinfo(const char *name);
+//void md_send_devinfo(const char *name);
 
 // Expose wireless_task and smsg_is_busy to allow for more aggressive
 // wireless_task processing and to prevent sleep when smsg_is_busy.
@@ -89,9 +89,9 @@ void keyboard_post_init_kb(void) {
     }
     gpio_set_pin_output(USB_POWER_EN_PIN);
 
-    wireless_init();
-    md_send_devinfo(MD_BT_NAME);
-    wait_ms(10);
+    //wireless_init();
+    //md_send_devinfo(MD_BT_NAME);
+    //wait_ms(10);
     wireless_devs_change(!confinfo.devs, confinfo.devs, false);
     post_init_timer = timer_read32();
 

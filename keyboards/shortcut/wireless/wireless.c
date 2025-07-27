@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "quantum.h"
+#include "bluetooth.h"
 #include "wireless.h"
 
 #ifndef WLS_INQUIRY_BAT_TIME
@@ -27,10 +28,12 @@ host_driver_t wireless_driver = {
     .send_extra    = wireless_send_extra,
 };
 
+/*
 void wireless_init(void) {
 
     md_init();
 }
+*/
 
 uint8_t wireless_keyboard_leds(void) __attribute__((weak));
 uint8_t wireless_keyboard_leds(void) {
@@ -140,7 +143,8 @@ void wireless_send_nkro(report_nkro_t *report) {
     }
 
     // wireless_driver.send_keyboard(&temp_report_keyboard);
-    while(smsg_is_busy()) wireless_task();
+    //while(smsg_is_busy()) wireless_task();
+    while(smsg_is_busy()) bluetooth_task();
     host_keyboard_send(&temp_report_keyboard);
     md_send_nkro(wls_report_nkro);
 }
@@ -244,6 +248,7 @@ void wireless_pre_task(void) {}
 void wireless_post_task(void) __attribute__((weak));
 void wireless_post_task(void) {}
 
+/*
 void wireless_task(void) {
 
     wireless_pre_task();
@@ -251,9 +256,9 @@ void wireless_task(void) {
     md_main_task();
     wireless_post_task();
 
-    /* usb_remote_wakeup() should be invoked last so that we have chance
-     * to switch to wireless after start-up when usb is not connected
-     */
+    // usb_remote_wakeup() should be invoked last so that we have chance
+    // to switch to wireless after start-up when usb is not connected
+    //
     if (get_transport() == TRANSPORT_USB) {
         usb_remote_wakeup();
     } else if (lpwr_get_state() == LPWR_NORMAL) {
@@ -271,3 +276,4 @@ void housekeeping_task_kb(void) {
 
     wireless_task();
 }
+*/
