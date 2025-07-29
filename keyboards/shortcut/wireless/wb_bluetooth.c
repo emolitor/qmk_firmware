@@ -23,7 +23,6 @@
 
 #include "quantum.h"
 #include "bluetooth.h"
-//#include "lowpower.h"
 #include "module.h"
 #include "smsg.h"
 
