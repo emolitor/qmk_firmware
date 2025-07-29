@@ -27,10 +27,6 @@
 #include "module.h"
 #include "smsg.h"
 
-#ifndef WLS_INQUIRY_BAT_TIME
-#    define WLS_INQUIRY_BAT_TIME 3000
-#endif
-
 static uint8_t wls_devs = DEVS_USB;
 
 void bluetooth_init(void) {
@@ -40,16 +36,7 @@ void bluetooth_init(void) {
 }
 
 void bluetooth_task(void) {
-    //lpwr_task();
     md_main_task();
-
-    static uint32_t inqtimer = 0x00;
-
-    if (sync_timer_elapsed32(inqtimer) >= (WLS_INQUIRY_BAT_TIME)) {
-        if (md_inquire_bat()) {
-            inqtimer = sync_timer_read32();
-        }
-    }
 }
 
 bool bluetooth_is_connected(void) {

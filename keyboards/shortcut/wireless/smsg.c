@@ -34,7 +34,6 @@ static uint8_t smsg_buffer[SMSG_BUF_SIZE];
 static smsg_t smsg_instance;
 
 void smsg_init(void) {
-
     smsg_instance.buffer    = smsg_buffer;
     smsg_instance.ptr       = smsg_ptr;
     smsg_instance.ptr->head = smsg_instance.buffer;
