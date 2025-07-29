@@ -23,7 +23,7 @@
 
 #include "quantum.h"
 #include "bluetooth.h"
-#include "lowpower.h"
+//#include "lowpower.h"
 #include "module.h"
 #include "smsg.h"
 
@@ -40,7 +40,7 @@ void bluetooth_init(void) {
 }
 
 void bluetooth_task(void) {
-    lpwr_task();
+    //lpwr_task();
     md_main_task();
 
     static uint32_t inqtimer = 0x00;

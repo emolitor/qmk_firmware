@@ -15,7 +15,6 @@ ifeq ($(strip $(WIRELESS_ENABLE)), yes)
 
     SRC += \
 	    $(WIRELESS_DIR)/wb_bluetooth.c \
-        $(WIRELESS_DIR)/lowpower.c \
         $(WIRELESS_DIR)/smsg.c \
         $(WIRELESS_DIR)/module.c
 endif
