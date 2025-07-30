@@ -1,3 +1,4 @@
+// Copyright 2025 emolitor (github.com/emolitor)
 // Copyright 2024 Su (@isuua)
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -10,8 +11,8 @@
 #    define MD_BAUD_RATE 115200
 #endif
 
-#ifndef MD_SNED_PKT_TIMEOUT
-#    define MD_SNED_PKT_TIMEOUT 10
+#ifndef MD_SEND_PKT_TIMEOUT
+#    define MD_SEND_PKT_TIMEOUT 10
 #endif
 
 #ifndef MD_SEND_PKT_RETRY
@@ -22,40 +23,9 @@
 #    define MD_SEND_PKT_PAYLOAD_MAX ((MD_RAW_SIZE) + 4)
 #endif
 
-#ifndef MD_BT1_NAME
-#    define MD_BT1_NAME PRODUCT " BT1"
-#endif
-
-#ifndef MD_BT2_NAME
-#    define MD_BT2_NAME PRODUCT " BT2"
-#endif
-
-#ifndef MD_BT3_NAME
-#    define MD_BT3_NAME PRODUCT " BT3"
-#endif
-
-#ifndef MD_BT4_NAME
-#    define MD_BT4_NAME PRODUCT " BT4"
-#endif
-
-#ifndef MD_BT5_NAME
-#    define MD_BT5_NAME PRODUCT " BT5"
-#endif
-
-#ifndef MD_DONGLE_MANUFACTURER
-#    define MD_DONGLE_MANUFACTURER MANUFACTURER
-#endif
-
-#ifndef MD_DONGLE_PRODUCT
-#    define MD_DONGLE_PRODUCT PRODUCT " Dongle"
-#endif
-
 #ifndef MD_RAW_SIZE
 #    define MD_RAW_SIZE 32
 #endif
-
-#define USBCONCAT(a, b) a##b
-#define USBSTR(s) USBCONCAT(L, s)
 
 typedef struct
 {
@@ -240,7 +210,7 @@ static void md_send_pkt_task(void) {
 
     switch (smsg_get_state()) {
         case smsg_state_busy: {
-            if (sync_timer_elapsed32(smsg_timer) > (MD_SNED_PKT_TIMEOUT)) {
+            if (sync_timer_elapsed32(smsg_timer) > (MD_SEND_PKT_TIMEOUT)) {
                 smsg_retry = 0;
                 smsg_set_state(smsg_state_retry);
             }

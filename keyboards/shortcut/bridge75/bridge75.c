@@ -86,15 +86,6 @@ void suspend_wakeup_init_kb(void) {
 
     wireless_devs_change(wireless_get_current_devs(), wireless_get_current_devs(), false);
     suspend_wakeup_init_user();
-    wait_ms(5);
-}
-
-bool lpwr_is_allow_timeout_hook(void) {
-    if (wireless_get_current_devs() == DEVS_USB || smsg_is_busy()) {
-        return false;
-    }
-
-    return true;
 }
 
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
@@ -286,15 +277,4 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
     }
 
     return true;
-}
-
-// Temporary work around for WS2812 pin init
-void board_init(void) {
-    gpio_set_pin_output(WS2812_DI_PIN);
-    gpio_write_pin_low(WS2812_DI_PIN);
-}
-
-// Force MCU reset on unhandled_exception
-void _unhandled_exception(void) {
-    mcu_reset();
 }
