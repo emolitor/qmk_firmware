@@ -139,9 +139,7 @@ void bluetooth_send_nkro(report_nkro_t *report) {
         memset(&temp_report_keyboard, 0, sizeof(temp_report_keyboard));
     }
 
-    while (smsg_is_busy()) {
-        bluetooth_task();
-    }
+    bluetooth_send_keyboard(&temp_report_keyboard);
     host_keyboard_send(&temp_report_keyboard);
     md_send_nkro(wls_report_nkro);
 }
