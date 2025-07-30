@@ -940,7 +940,7 @@ ifeq ($(strip $(DIP_SWITCH_ENABLE)), yes)
     endif
 endif
 
-VALID_BATTERY_DRIVER_TYPES := adc custom vendor
+VALID_BATTERY_DRIVER_TYPES := adc custom westberry vendor
 
 BATTERY_DRIVER ?= adc
 ifeq ($(strip $(BATTERY_DRIVER_REQUIRED)), yes)
