@@ -457,55 +457,36 @@ void md_devs_change(uint8_t devs, bool reset) {
         case DEVS_2G4: {
             md_send_devctrl(MD_SND_CMD_DEVCTRL_2G4);
             if (reset) {
-                // if (md_get_version() < 48) {
-                //     md_send_manufacturer(MD_DONGLE_MANUFACTURER, strlen(MD_DONGLE_MANUFACTURER));
-                //     md_send_product(MD_DONGLE_PRODUCT, strlen(MD_DONGLE_PRODUCT));
-                // } else { // Add Unicode character support starting from v48.
-                    md_send_manufacturer((char *)USBSTR(MD_DONGLE_MANUFACTURER), sizeof(USBSTR(MD_DONGLE_MANUFACTURER)));
-                    md_send_product((char *)USBSTR(MD_DONGLE_PRODUCT), sizeof(USBSTR(MD_DONGLE_PRODUCT)));
-                // }
-                md_send_vpid(VENDOR_ID, PRODUCT_ID);
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_CLEAN);
                 md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
             }
         } break;
         case DEVS_BT1: {
             md_send_devctrl(MD_SND_CMD_DEVCTRL_BT1);
             if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_CLEAN);
-                md_send_devinfo(MD_BT1_NAME);
                 md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
             }
         } break;
         case DEVS_BT2: {
             md_send_devctrl(MD_SND_CMD_DEVCTRL_BT2);
             if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_CLEAN);
-                md_send_devinfo(MD_BT2_NAME);
                 md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
             }
         } break;
         case DEVS_BT3: {
             md_send_devctrl(MD_SND_CMD_DEVCTRL_BT3);
             if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_CLEAN);
-                md_send_devinfo(MD_BT3_NAME);
                 md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
             }
         } break;
         case DEVS_BT4: {
             md_send_devctrl(MD_SND_CMD_DEVCTRL_BT4);
             if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_CLEAN);
-                md_send_devinfo(MD_BT4_NAME);
                 md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
             }
         } break;
         case DEVS_BT5: {
             md_send_devctrl(MD_SND_CMD_DEVCTRL_BT5);
             if (reset) {
-                md_send_devctrl(MD_SND_CMD_DEVCTRL_CLEAN);
-                md_send_devinfo(MD_BT5_NAME);
                 md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
             }
         } break;
