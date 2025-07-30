@@ -1,5 +1,5 @@
 #include "quantum.h"
-#include "drivers/bluetooth/westberry/module.h"
+#include "westberry/module.h"
 
 void battery_driver_init(void) {
 }

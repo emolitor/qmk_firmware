@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include QMK_KEYBOARD_H
-#include "drivers/bluetooth/westberry/wb_bluetooth.h"
+#include "westberry/wb_bluetooth.h"
 
 typedef union {
     uint32_t raw;
