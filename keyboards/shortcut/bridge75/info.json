@@ -47,11 +47,6 @@
         "term_per_key": true
     },
     "keycodes": [
-        { "key": "KC_USB" },
-        { "key": "KC_BT1" },
-        { "key": "KC_BT2" },
-        { "key": "KC_BT3" },
-        { "key": "KC_2G4" },
         { "key": "SLP_FIX" },
         { "key": "USBSLP" }
     ],
