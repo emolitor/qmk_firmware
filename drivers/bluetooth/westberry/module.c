@@ -34,7 +34,6 @@ typedef struct {
     uint8_t bat;
 } md_info_t;
 
-static uint8_t md_pkt_payload[MD_SEND_PKT_PAYLOAD_MAX] = {0};
 static uint8_t md_rev_payload[MD_SEND_PKT_PAYLOAD_MAX] = {0};
 static uint8_t md_raw_payload[MD_RAW_SIZE]             = {0};
 
@@ -249,8 +248,6 @@ static void md_send_pkt_task(void) {
 void md_init(void) {
     uart_init(MD_BAUD_RATE);
     smsg_init();
-
-    memset(md_pkt_payload, 0, sizeof(md_pkt_payload));
 }
 
 void md_main_task(void) {
