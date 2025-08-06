@@ -42,6 +42,15 @@ void smsg_send(smsg_message_t *msg) {
     chFifoSendObject(&smsg_instance.fifo, msg);
 }
 
+smsg_message_t *smsg_receive(void) {
+    smsg_message_t *msg = NULL;
+    msg_t result = chFifoReceiveObjectTimeout(&smsg_instance.fifo, (void **)&msg, TIME_IMMEDIATE);
+    if (result != MSG_OK) {
+        return NULL;
+    }
+    return msg;
+}
+
 bool smsg_push(uint8_t *buf, uint32_t size) {
     if (size > SMSG_PAYLOAD_LEN) {
         return false;
@@ -62,8 +71,8 @@ bool smsg_push(uint8_t *buf, uint32_t size) {
 uint32_t smsg_peek(uint8_t *buf) {
     // If we don't have a current message, try to receive one
     if (smsg_instance.current_msg == NULL) {
-        msg_t result = chFifoReceiveObjectTimeout(&smsg_instance.fifo, (void **)&smsg_instance.current_msg, TIME_IMMEDIATE);
-        if (result != MSG_OK) {
+        smsg_instance.current_msg = smsg_receive();
+        if (smsg_instance.current_msg == NULL) {
             return 0;
         }
     }
