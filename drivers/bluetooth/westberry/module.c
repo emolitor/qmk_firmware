@@ -205,6 +205,7 @@ static void md_receive_msg_task(void) {
 static void md_send_pkt_task(void) {
     static uint32_t smsg_timer = 0x00;
     static uint8_t  smsg_retry = 0;
+    static smsg_message_t *current_msg = NULL;
 
     switch (smsg_get_state()) {
         case smsg_state_busy: {
@@ -216,18 +217,26 @@ static void md_send_pkt_task(void) {
         case smsg_state_retry: {
             if (++smsg_retry > MD_SEND_PKT_RETRY) {
                 smsg_retry = 0;
-                smsg_pop();
+                if (current_msg) {
+                    smsg_return(current_msg);
+                    current_msg = NULL;
+                }
             }
             smsg_set_state(smsg_state_free);
         } break;
         case smsg_state_replied: {
-            smsg_pop();
+            if (current_msg) {
+                smsg_return(current_msg);
+                current_msg = NULL;
+            }
             smsg_set_state(smsg_state_free);
         } // break;
         case smsg_state_free: {
-            uint32_t size = smsg_peek(md_pkt_payload);
-            if (size) {
-                md_send_pkt(md_pkt_payload, size);
+            if (!current_msg) {
+                current_msg = smsg_receive();
+            }
+            if (current_msg) {
+                md_send_pkt(current_msg->data, current_msg->size);
                 smsg_timer = sync_timer_read32();
                 smsg_set_state(smsg_state_busy);
             }
@@ -275,137 +284,162 @@ void md_send_pkt(uint8_t *data, uint32_t len) {
 }
 
 void md_send_kb(uint8_t *data) {
-    uint8_t sdata[MD_SND_CMD_KB_LEN + 2] = {0x00};
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    sdata[0] = MD_SND_CMD_SEND_KB;
-    memcpy(&sdata[1], data, sizeof(sdata) - 2);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_SEND_KB;
+    memcpy(&msg->data[1], data, MD_SND_CMD_KB_LEN);
+    md_calc_check_sum(msg->data, MD_SND_CMD_KB_LEN + 1);
+    msg->size = MD_SND_CMD_KB_LEN + 2;
+    smsg_send(msg);
 }
 
 void md_send_nkro(uint8_t *data) {
-    uint8_t sdata[MD_SND_CMD_NKRO_LEN + 2] = {0x00};
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    sdata[0] = MD_SND_CMD_SEND_NKRO;
-    memcpy(&sdata[1], data, sizeof(sdata) - 2);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_SEND_NKRO;
+    memcpy(&msg->data[1], data, MD_SND_CMD_NKRO_LEN);
+    md_calc_check_sum(msg->data, MD_SND_CMD_NKRO_LEN + 1);
+    msg->size = MD_SND_CMD_NKRO_LEN + 2;
+    smsg_send(msg);
 }
 
 void md_send_consumer(uint8_t *data) {
-    uint8_t sdata[MD_SND_CMD_CONSUMER_LEN + 2] = {0x00};
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    sdata[0] = MD_SND_CMD_SEND_CONSUMER;
-    memcpy(&sdata[1], data, sizeof(sdata) - 2);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_SEND_CONSUMER;
+    memcpy(&msg->data[1], data, MD_SND_CMD_CONSUMER_LEN);
+    md_calc_check_sum(msg->data, MD_SND_CMD_CONSUMER_LEN + 1);
+    msg->size = MD_SND_CMD_CONSUMER_LEN + 2;
+    smsg_send(msg);
 }
 
 void md_send_system(uint8_t *data) {
-    uint8_t sdata[MD_SND_CMD_SYSTEM_LEN + 2] = {0x00};
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    sdata[0] = MD_SND_CMD_SEND_SYSTEM;
-    memcpy(&sdata[1], data, sizeof(sdata) - 2);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_SEND_SYSTEM;
+    memcpy(&msg->data[1], data, MD_SND_CMD_SYSTEM_LEN);
+    md_calc_check_sum(msg->data, MD_SND_CMD_SYSTEM_LEN + 1);
+    msg->size = MD_SND_CMD_SYSTEM_LEN + 2;
+    smsg_send(msg);
 }
 
 void md_send_fn(uint8_t *data) {
-    uint8_t sdata[MD_SND_CMD_FN_LEN + 2] = {0x00};
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    sdata[0] = MD_SND_CMD_SEND_FN;
-    memcpy(&sdata[1], data, sizeof(sdata) - 2);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_SEND_FN;
+    memcpy(&msg->data[1], data, MD_SND_CMD_FN_LEN);
+    md_calc_check_sum(msg->data, MD_SND_CMD_FN_LEN + 1);
+    msg->size = MD_SND_CMD_FN_LEN + 2;
+    smsg_send(msg);
 }
 
 void md_send_mouse(uint8_t *data) {
-    uint8_t sdata[MD_SND_CMD_MOUSE_LEN + 2] = {0x00};
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    sdata[0] = MD_SND_CMD_SEND_MOUSE;
-    memcpy(&sdata[1], data, sizeof(sdata) - 2);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_SEND_MOUSE;
+    memcpy(&msg->data[1], data, MD_SND_CMD_MOUSE_LEN);
+    md_calc_check_sum(msg->data, MD_SND_CMD_MOUSE_LEN + 1);
+    msg->size = MD_SND_CMD_MOUSE_LEN + 2;
+    smsg_send(msg);
 }
 
 void md_send_devinfo(const char *name) {
-    uint8_t sdata[MD_SND_CMD_DEVINFO_LEN + 3] = {0x00};
-    uint8_t infolen                           = strlen((const char *)name);
+    uint8_t infolen = strlen((const char *)name);
 
     if (infolen > MD_SND_CMD_DEVINFO_LEN) {
         return;
     }
 
-    sdata[0] = MD_SND_CMD_SEND_DEVINFO;
-    sdata[1] = infolen;
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    memcpy(&sdata[2], name, infolen);
-    md_calc_check_sum(sdata, infolen + 2);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_SEND_DEVINFO;
+    msg->data[1] = infolen;
+    memcpy(&msg->data[2], name, infolen);
+    md_calc_check_sum(msg->data, infolen + 2);
+    msg->size = infolen + 3;
+    smsg_send(msg);
 }
 
 void md_send_devctrl(uint8_t cmd) {
-    uint8_t sdata[3] = {0x00};
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
 
-    sdata[0] = MD_SND_CMD_DEVCTRL;
-    memcpy(&sdata[1], &cmd, sizeof(sdata) - 2);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    msg->data[0] = MD_SND_CMD_DEVCTRL;
+    msg->data[1] = cmd;
+    md_calc_check_sum(msg->data, 2);
+    msg->size = 3;
+    smsg_send(msg);
 }
 
 void md_send_manufacturer(char *str, uint8_t len) {
-    uint8_t sdata[MD_SND_CMD_MANUFACTURER_LEN + 3] = {0x00};
-
     if (len > MD_SND_CMD_MANUFACTURER_LEN) {
         return;
     }
 
-    sdata[0] = MD_SND_CMD_MANUFACTURER;
-    sdata[1] = len;
-    memcpy(&sdata[2], str, len);
-    md_calc_check_sum(sdata, len + 2);
-    smsg_push(sdata, len + 3);
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
+
+    msg->data[0] = MD_SND_CMD_MANUFACTURER;
+    msg->data[1] = len;
+    memcpy(&msg->data[2], str, len);
+    md_calc_check_sum(msg->data, len + 2);
+    msg->size = len + 3;
+    smsg_send(msg);
 }
 
 void md_send_product(char *str, uint8_t len) {
-    uint8_t sdata[MD_SND_CMD_PRODUCT_LEN + 3] = {0x00};
-
     if (len > MD_SND_CMD_PRODUCT_LEN) {
         return;
     }
 
-    sdata[0] = MD_SND_CMD_PRODUCT;
-    sdata[1] = len;
-    memcpy(&sdata[2], str, len);
-    md_calc_check_sum(sdata, len + 2);
-    smsg_push(sdata, len + 3);
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
+
+    msg->data[0] = MD_SND_CMD_PRODUCT;
+    msg->data[1] = len;
+    memcpy(&msg->data[2], str, len);
+    md_calc_check_sum(msg->data, len + 2);
+    msg->size = len + 3;
+    smsg_send(msg);
 }
 
 void md_send_vpid(uint16_t vid, uint16_t pid) {
-    uint8_t  sdata[4 + 2] = {0x00};
     uint32_t vpid;
 
     vpid = (pid << 16) | vid;
 
-    sdata[0] = MD_SND_CMD_VPID;
-    memcpy(&sdata[1], &vpid, sizeof(vpid));
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
+
+    msg->data[0] = MD_SND_CMD_VPID;
+    memcpy(&msg->data[1], &vpid, sizeof(vpid));
+    md_calc_check_sum(msg->data, 5);
+    msg->size = 6;
+    smsg_send(msg);
 }
 
 void md_send_raw(uint8_t *data, uint8_t length) {
-    uint8_t sdata[MD_RAW_SIZE + 4] = {0x00};
-
     if (length != MD_RAW_SIZE) {
         return;
     }
 
-    sdata[0] = MD_SND_CMD_RAW;
-    sdata[1] = MD_SND_CMD_RAW_IN;
-    sdata[2] = length;
-    memcpy(&sdata[3], data, length);
-    md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    smsg_message_t *msg = smsg_take();
+    if (!msg) return;
+
+    msg->data[0] = MD_SND_CMD_RAW;
+    msg->data[1] = MD_SND_CMD_RAW_IN;
+    msg->data[2] = length;
+    memcpy(&msg->data[3], data, length);
+    md_calc_check_sum(msg->data, MD_RAW_SIZE + 3);
+    msg->size = MD_RAW_SIZE + 4;
+    smsg_send(msg);
 }
 
 void md_devs_change(uint8_t devs, bool reset) __attribute__((weak));
