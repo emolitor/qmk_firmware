@@ -31,7 +31,7 @@ smsg_message_t *smsg_take(void) {
 }
 
 
-void smsg_release(smsg_message_t *msg) {
+void smsg_return(smsg_message_t *msg) {
     // Return the current message to the pool
     if (msg != NULL) {
         chFifoReturnObject(&smsg_instance.fifo, msg);
@@ -70,7 +70,7 @@ uint32_t smsg_peek(uint8_t *buf) {
 }
 
 void smsg_pop(void) {
-    smsg_release(smsg_instance.current_msg);
+    smsg_return(smsg_instance.current_msg);
     smsg_instance.current_msg = NULL;
 }
 
