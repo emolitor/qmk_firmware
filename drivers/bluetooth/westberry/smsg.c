@@ -25,12 +25,25 @@ void smsg_init(void) {
     smsg_instance.current_msg = NULL;
 }
 
+smsg_message_t *smsg_take(void) {
+    // Acquire a message to the pool
+    return (smsg_message_t *)chFifoTakeObjectTimeout(&smsg_instance.fifo, TIME_IMMEDIATE);
+}
+
+
+void smsg_release(smsg_message_t *msg) {
+    // Return the current message to the pool
+    if (msg != NULL) {
+        chFifoReturnObject(&smsg_instance.fifo, msg);
+    }
+}
+
 bool smsg_push(uint8_t *buf, uint32_t size) {
     if (size > SMSG_PAYLOAD_LEN) {
         return false;
     }
 
-    smsg_message_t *msg = (smsg_message_t *)chFifoTakeObjectTimeout(&smsg_instance.fifo, TIME_IMMEDIATE);
+    smsg_message_t *msg = smsg_take();
     if (msg == NULL) {
         return false;
     }
@@ -46,7 +59,7 @@ uint32_t smsg_peek(uint8_t *buf) {
     // If we don't have a current message, try to receive one
     if (smsg_instance.current_msg == NULL) {
         msg_t result = chFifoReceiveObjectTimeout(&smsg_instance.fifo, (void **)&smsg_instance.current_msg, TIME_IMMEDIATE);
-        if (result != MSG_OK || smsg_instance.current_msg == NULL) {
+        if (result != MSG_OK) {
             return 0;
         }
     }
@@ -57,11 +70,8 @@ uint32_t smsg_peek(uint8_t *buf) {
 }
 
 void smsg_pop(void) {
-    // Return the current message to the pool and clear it
-    if (smsg_instance.current_msg != NULL) {
-        chFifoReturnObject(&smsg_instance.fifo, smsg_instance.current_msg);
-        smsg_instance.current_msg = NULL;
-    }
+    smsg_release(smsg_instance.current_msg);
+    smsg_instance.current_msg = NULL;
 }
 
 smsg_states_t smsg_get_state(void) {
