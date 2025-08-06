@@ -20,6 +20,7 @@ typedef enum { smsg_state_free = 0, smsg_state_busy, smsg_state_retry, smsg_stat
 void            smsg_init(void);
 smsg_message_t *smsg_take(void);
 void            smsg_return(smsg_message_t *msg);
+void            smsg_send(smsg_message_t *msg);
 bool            smsg_push(uint8_t *buf, uint32_t size);
 uint32_t        smsg_peek(uint8_t *buf);
 void            smsg_pop(void);

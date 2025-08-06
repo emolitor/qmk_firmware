@@ -38,6 +38,10 @@ void smsg_return(smsg_message_t *msg) {
     }
 }
 
+void smsg_send(smsg_message_t *msg) {
+    chFifoSendObject(&smsg_instance.fifo, msg);
+}
+
 bool smsg_push(uint8_t *buf, uint32_t size) {
     if (size > SMSG_PAYLOAD_LEN) {
         return false;
@@ -51,7 +55,7 @@ bool smsg_push(uint8_t *buf, uint32_t size) {
     memcpy(msg->data, buf, size);
     msg->size = size;
 
-    chFifoSendObject(&smsg_instance.fifo, msg);
+    smsg_send(msg);
     return true;
 }
 
