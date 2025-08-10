@@ -5,7 +5,6 @@
 
 #include QMK_KEYBOARD_H
 #include "westberry/wb_bluetooth.h"
-#include "power.h"
 
 typedef union {
     uint32_t raw;
@@ -73,9 +72,6 @@ void keyboard_post_init_kb(void) {
     md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_2G4_EN); // timeout 30min to sleep in 2.4g mode, enable
     wireless_devs_change(!confinfo.devs, confinfo.devs, false);
 
-    // Initialize power management
-    power_init();
-
     keyboard_post_init_user();
 }
 
@@ -92,24 +88,9 @@ void suspend_wakeup_init_kb(void) {
     suspend_wakeup_init_user();
 }
 
-void matrix_scan_kb(void) {
-    // Run power management task
-    power_task();
-    
-    // Check for key activity
-    matrix_scan_power();
-    
-    matrix_scan_user();
-}
-
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (process_record_user(keycode, record) != true) {
         return false;
-    }
-
-    // Trigger power activity on any key press
-    if (record->event.pressed) {
-        power_activity_trigger();
     }
 
     switch (keycode) {

@@ -11,7 +11,3 @@
 
 #undef WB32_SPI_USE_QSPI
 #define WB32_SPI_USE_QSPI TRUE
-
-// Improved deep sleep bug fix for Bridge75
-//#undef LPWR_UART_WAKEUP_DISABLE
-//#define LPWR_UART_WAKEUP_DISABLE TRUE

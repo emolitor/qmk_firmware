@@ -47,7 +47,3 @@
 
 //#define WLS_KEYBOARD_REPORT_KEYS 5
 #define WLS_KEYBOARD_REPORT_KEYS KEYBOARD_REPORT_KEYS
-
-/* POWER SAVING CONFIGURATION */
-#define POWER_IDLE_TIMEOUT_MS 30000        // 30 seconds before light sleep
-#define POWER_DEEP_SLEEP_TIMEOUT_MS 300000 // 5 minutes before deep sleep
