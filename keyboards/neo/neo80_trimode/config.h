@@ -4,11 +4,11 @@
 #pragma once
 
 /*
- * Specific tapping term for wireless configuration. If the key is held for
+ * Time to hold a wireless key to start pairing mode. If the key is held for
  * less than 3 seconds we select that device for the active connection. If
  * greater than 3 seconds we select that device and go into pairing mode.
  */
-#define WIRELESS_TAPPING_TERM 3000
+#define WIRELESS_KEYCODE_PAIR_TIME 3000
 /*
  * After a connection, light the LED under the number key associated with the
  * device for 5 seconds, then turn the LED off to save power.

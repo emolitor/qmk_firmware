@@ -45,21 +45,6 @@ struct devs_list *current_dev = &devs[0]; // Default circular linked list to USB
 // Hack
 void md_send_devinfo(const char *name);
 
-// We use per-key tapping term to allow the wireless keys to have a much
-// longer tapping term, therefore a longer hold, to match the default
-// firmware behaviour.
-uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
-    switch (keycode) {
-        case LT(0, KC_BT1):
-        case LT(0, KC_BT2):
-        case LT(0, KC_BT3):
-        case LT(0, KC_2G4):
-            return WIRELESS_TAPPING_TERM;
-        default:
-            return TAPPING_TERM;
-    }
-}
-
 uint32_t led_blink_callback(uint32_t trigger_time, void *cb_arg) {
     static const uint8_t pattern[4] = {0x00, 0xff, 0x0f, 0xaa};
     static uint8_t       phase      = 0;
@@ -204,58 +189,68 @@ void md_devs_change(uint8_t devs, bool reset) {
     }
 }
 
+static uint8_t keycode_to_device[] = {DEVS_BT1, DEVS_BT2, DEVS_BT3, DEVS_2G4};
+
+static uint32_t wls_process_long_press(uint32_t trigger_time, void *cb_arg) {
+    uint8_t newdev = (uint8_t)((uintptr_t)cb_arg);
+
+    if (newdev) {
+        // Start pairing mode
+        wireless_devs_change(wireless_get_current_devs(), newdev, true);
+    }
+
+    return 0;
+}
+
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     if (process_record_user(keycode, record) != true) {
         return false;
     }
 
+    static deferred_token wls_process_long_press_token = INVALID_DEFERRED_TOKEN;
+
     switch (keycode) {
-        case KC_USB: {
-            wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
-            return false;
-        }
-        case KC_NXT: {
+        case KC_USB:
+            if (record->event.pressed) {
+                wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
+            }
+            break;
+        case KC_NXT:
             if (record->event.pressed) {
                 current_dev = current_dev->next;
                 wireless_devs_change(wireless_get_current_devs(), current_dev->devs, false);
-                return false;
             }
-        }
-        case LT(0, KC_BT1): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, true);
+            break;
+        case KC_BT1:
+        case KC_BT2:
+        case KC_BT3:
+        case KC_2G4:
+            if (record->event.pressed) {
+                if (keycode - KC_BT1 > sizeof(keycode_to_device) / sizeof(*keycode_to_device)) {
+                    // Out of bounds, this should never happen
+                    break;
+                }
+                uint8_t newdev = keycode_to_device[keycode - KC_BT1];
+
+                wireless_devs_change(wireless_get_current_devs(), newdev, false);
+
+                // Start monitoring for long press
+                if (wls_process_long_press_token == INVALID_DEFERRED_TOKEN) {
+                    wls_process_long_press_token = defer_exec(WIRELESS_KEYCODE_PAIR_TIME, wls_process_long_press, (void *)((uintptr_t)newdev));
+                }
+
+            } else if (wls_process_long_press_token != INVALID_DEFERRED_TOKEN) {
+                cancel_deferred_exec(wls_process_long_press_token);
+                wls_process_long_press_token = INVALID_DEFERRED_TOKEN;
             }
-            return false;
-        }
-        case LT(0, KC_BT2): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, true);
-            }
-            return false;
-        }
-        case LT(0, KC_BT3): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, true);
-            }
-            return false;
-        }
-        case LT(0, KC_2G4): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, true);
-            }
-            return false;
-        }
+            break;
         default:
+            // bubble up all keycodes we haven't handled in this function
             return true;
     }
+
+    // but cancel processing for those handled by the switch statement above
+    return false;
 }
 
 void wireless_devs_change_kb(uint8_t old_devs, uint8_t new_devs, bool reset) {

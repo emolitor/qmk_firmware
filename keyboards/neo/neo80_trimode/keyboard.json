@@ -37,9 +37,6 @@
         "rgb_light": false,
         "rgb_matrix": true
     },
-    "tapping": {
-        "term_per_key": true
-    },
     "keycodes": [
         { "key": "KC_USB" },
         { "key": "KC_BT1" },
