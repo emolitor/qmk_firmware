@@ -106,7 +106,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return true;
         }
-        case RGB_TOG: {
+        case RM_TOGG: {
             // Restore indicators if in overriden state
             if (rgb_override) {
                 rgb_override = false;
