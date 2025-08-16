@@ -150,6 +150,14 @@ void bluetooth_send_mouse(report_mouse_t *report) {
     md_send_mouse((uint8_t *)&wls_report_mouse);
 }
 
+void bluetooth_send_raw_hid(uint8_t *data, uint8_t length) {
+    if (MD_STATE_PAIRING == *md_getp_state()) {
+        return;
+    }
+
+    md_send_raw(data, length);
+}
+
 void wireless_devs_change_user(uint8_t old_devs, uint8_t new_devs, bool reset) __attribute__((weak));
 void wireless_devs_change_user(uint8_t old_devs, uint8_t new_devs, bool reset) {}
 
