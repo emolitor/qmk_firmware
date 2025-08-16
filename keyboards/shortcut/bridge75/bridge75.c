@@ -26,13 +26,13 @@ bool    rgb_override = false;
 // firmware behaviour.
 uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
-        case LT(0, BT_PRF1):
+        case LT(0, KC_1):
             return WIRELESS_TAPPING_TERM;
-        case LT(0, BT_PRF2):
+        case LT(0, KC_2):
             return WIRELESS_TAPPING_TERM;
-        case LT(0, BT_PRF3):
+        case LT(0, KC_3):
             return WIRELESS_TAPPING_TERM;
-        case LT(0, OU_USB):
+        case LT(0, KC_4):
             return WIRELESS_TAPPING_TERM;
         default:
             return TAPPING_TERM;
@@ -127,7 +127,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
             return false;
         }
-        case LT(0, BT_PRF1): {
+        case LT(0, KC_1): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
@@ -135,7 +135,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case LT(0, BT_PRF2): {
+        case LT(0, KC_2): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
@@ -143,7 +143,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case LT(0, BT_PRF3): {
+        case LT(0, KC_3): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
@@ -151,7 +151,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case LT(0, OU_2P4G): {
+        case LT(0, KC_4): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
