@@ -44,11 +44,18 @@ uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
 
 void eeconfig_init_kb(void) {
     confinfo.flag                          = true;
-#ifdef BLUETOOTH_ENABLE
-    confinfo.devs                          = DEVS_USB;
-#endif
+    confinfo.devs                          = 0;
     eeconfig_update_kb(confinfo.raw);
     eeconfig_init_user();
+}
+
+uint8_t get_devs(void) {
+    return confinfo.devs;
+}
+
+void update_devs(uint8_t devs) {
+    confinfo.devs = devs;
+    eeconfig_update_kb(confinfo.raw);
 }
 
 void keyboard_post_init_kb(void) {
@@ -90,10 +97,6 @@ void suspend_power_down_kb(void) {
 void suspend_wakeup_init_kb(void) {
     gpio_write_pin_low(LED_POWER_EN_PIN);
     rgb_matrix_reload_from_eeprom();
-
-#ifdef BLUETOOTH_ENABLE
-    wireless_devs_change(wireless_get_current_devs(), wireless_get_current_devs(), false);
-#endif
 
     suspend_wakeup_init_user();
 }
@@ -187,56 +190,13 @@ void wireless_devs_change_kb(uint8_t old_devs, uint8_t new_devs, bool reset) {
 }
 #endif
 
-void blink(uint8_t key_index, uint8_t r, uint8_t g, uint8_t b, bool blink) {
+static void blink(uint8_t key_index, uint8_t r, uint8_t g, uint8_t b, bool blink) {
     if (blink) {
         rgb_matrix_set_color(key_index, r, g, b);
     } else {
         rgb_matrix_set_color(key_index, RGB_OFF);
     }
 }
-
-#ifdef BLUETOOTH_ENABLE
-void connection_indicators(void) {
-    switch (confinfo.devs) {
-        case DEVS_BT1: {
-            if (*md_getp_state() == MD_STATE_PAIRING) {
-                blink(DEVS_BT1_INDEX, RGB_ADJ_WHITE, blink_fast);
-            } else if (*md_getp_state() != MD_STATE_CONNECTED) {
-                blink(DEVS_BT1_INDEX, RGB_ADJ_WHITE, blink_slow);
-            } else {
-                rgb_matrix_set_color(DEVS_BT1_INDEX, RGB_ADJ_WHITE);
-            }
-        } break;
-        case DEVS_BT2: {
-            if (*md_getp_state() == MD_STATE_PAIRING) {
-                blink(DEVS_BT2_INDEX, RGB_ADJ_WHITE, blink_fast);
-            } else if (*md_getp_state() != MD_STATE_CONNECTED) {
-                blink(DEVS_BT2_INDEX, RGB_ADJ_WHITE, blink_slow);
-            } else {
-                rgb_matrix_set_color(DEVS_BT2_INDEX, RGB_ADJ_WHITE);
-            }
-        } break;
-        case DEVS_BT3: {
-            if (*md_getp_state() == MD_STATE_PAIRING) {
-                blink(DEVS_BT3_INDEX, RGB_ADJ_WHITE, blink_fast);
-            } else if (*md_getp_state() != MD_STATE_CONNECTED) {
-                blink(DEVS_BT3_INDEX, RGB_ADJ_WHITE, blink_slow);
-            } else {
-                rgb_matrix_set_color(DEVS_BT3_INDEX, RGB_ADJ_WHITE);
-            }
-        } break;
-        case DEVS_2G4: {
-            if (*md_getp_state() == MD_STATE_PAIRING) {
-                blink(DEVS_2G4_INDEX, RGB_ADJ_WHITE, blink_fast);
-            } else if (*md_getp_state() != MD_STATE_CONNECTED) {
-                blink(DEVS_2G4_INDEX, RGB_ADJ_WHITE, blink_slow);
-            } else {
-                rgb_matrix_set_color(DEVS_2G4_INDEX, RGB_ADJ_WHITE);
-            }
-        } break;
-    }
-}
-#endif
 
 void battery_percent_changed_kb(uint8_t level) {
     bat_level = level;
@@ -282,14 +242,6 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
                 rgb_matrix_set_color(ESCAPE_INDEX, RGB_OFF);
             }
         }
-
-#ifdef BLUETOOTH_ENABLE
-        // Show active connection
-        connection_indicators();
-    } else if (confinfo.devs != DEVS_USB && *md_getp_state() != MD_STATE_CONNECTED) {
-        // Always show wireless connection indicators when not connected
-        connection_indicators();
-#endif
     }
 
     if (host_keyboard_led_state().caps_lock) {
