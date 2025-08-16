@@ -27,8 +27,6 @@
         }
     },
     "features": {
-        "battery": true,
-        "bluetooth": true,
         "bootmagic": true,
         "command": false,
         "console": false,
@@ -38,12 +36,6 @@
         "haptic": false,
         "rgb_light": false,
         "rgb_matrix": true
-    },
-    "battery": {
-        "driver": "westberry"
-    },
-    "bluetooth": {
-        "driver": "westberry"
     },
     "qmk": {
         "locking": {

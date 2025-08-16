@@ -4,7 +4,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include QMK_KEYBOARD_H
+
+#ifdef BLUETOOTH_ENABLE
 #include "westberry/wb_bluetooth.h"
+#endif
 
 typedef union {
     uint32_t raw;
@@ -41,7 +44,9 @@ uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
 
 void eeconfig_init_kb(void) {
     confinfo.flag                          = true;
+#ifdef BLUETOOTH_ENABLE
     confinfo.devs                          = DEVS_USB;
+#endif
     eeconfig_update_kb(confinfo.raw);
     eeconfig_init_user();
 }
@@ -60,17 +65,19 @@ void keyboard_post_init_kb(void) {
     gpio_set_pin_input_high(BT_CHARGE_PIN);
 
     // Set USB_POWER_EN_PIN state before enabling the output to avoid instability
-    if (confinfo.devs == DEVS_USB && gpio_read_pin(BT_CABLE_PIN)) {
+    if (gpio_read_pin(BT_CABLE_PIN)) {
         gpio_write_pin_low(USB_POWER_EN_PIN);
     } else {
         gpio_write_pin_high(USB_POWER_EN_PIN);
     }
     gpio_set_pin_output(USB_POWER_EN_PIN);
 
+#ifdef BLUETOOTH_ENABLE
     md_send_devctrl(MD_SND_CMD_DEVCTRL_FW_VERSION);   // get the module fw version.
     md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_BT_EN);  // timeout 30min to sleep in bt mode, enable
     md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_2G4_EN); // timeout 30min to sleep in 2.4g mode, enable
     wireless_devs_change(!confinfo.devs, confinfo.devs, false);
+#endif
 
     keyboard_post_init_user();
 }
@@ -84,7 +91,10 @@ void suspend_wakeup_init_kb(void) {
     gpio_write_pin_low(LED_POWER_EN_PIN);
     rgb_matrix_reload_from_eeprom();
 
+#ifdef BLUETOOTH_ENABLE
     wireless_devs_change(wireless_get_current_devs(), wireless_get_current_devs(), false);
+#endif
+
     suspend_wakeup_init_user();
 }
 
@@ -119,10 +129,13 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             // clear if held down.
             if (record->event.pressed) {
                 eeconfig_init();
+#ifdef BLUETOOTH_ENABLE
                 wireless_devs_change(!confinfo.devs, confinfo.devs, false);
+#endif
             }
             return false;
         }
+#ifdef BLUETOOTH_ENABLE
         case OU_USB: {
             wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
             return false;
@@ -159,17 +172,20 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
+#endif
     }
 
     return true;
 }
 
+#ifdef BLUETOOTH_ENABLE
 void wireless_devs_change_kb(uint8_t old_devs, uint8_t new_devs, bool reset) {
     if (confinfo.devs != wireless_get_current_devs()) {
         confinfo.devs = wireless_get_current_devs();
         eeconfig_update_kb(confinfo.raw);
     }
 }
+#endif
 
 void blink(uint8_t key_index, uint8_t r, uint8_t g, uint8_t b, bool blink) {
     if (blink) {
@@ -179,6 +195,7 @@ void blink(uint8_t key_index, uint8_t r, uint8_t g, uint8_t b, bool blink) {
     }
 }
 
+#ifdef BLUETOOTH_ENABLE
 void connection_indicators(void) {
     switch (confinfo.devs) {
         case DEVS_BT1: {
@@ -219,6 +236,7 @@ void connection_indicators(void) {
         } break;
     }
 }
+#endif
 
 void battery_percent_changed_kb(uint8_t level) {
     bat_level = level;
@@ -265,11 +283,13 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             }
         }
 
+#ifdef BLUETOOTH_ENABLE
         // Show active connection
         connection_indicators();
     } else if (confinfo.devs != DEVS_USB && *md_getp_state() != MD_STATE_CONNECTED) {
         // Always show wireless connection indicators when not connected
         connection_indicators();
+#endif
     }
 
     if (host_keyboard_led_state().caps_lock) {
