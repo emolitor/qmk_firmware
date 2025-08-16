@@ -6,7 +6,7 @@
 #include QMK_KEYBOARD_H
 
 #ifdef BLUETOOTH_ENABLE
-#include "westberry/wb_bluetooth.h"
+#include "westberry_wireless.h"
 #endif
 
 typedef union {
