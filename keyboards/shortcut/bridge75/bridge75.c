@@ -4,10 +4,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include QMK_KEYBOARD_H
-
-#ifdef BLUETOOTH_ENABLE
-#include "westberry_wireless.h"
-#endif
+#include "connection.h"
 
 typedef union {
     uint32_t raw;
@@ -125,9 +122,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             // clear if held down.
             if (record->event.pressed) {
                 eeconfig_init();
-#ifdef BLUETOOTH_ENABLE
-                wireless_devs_change(!confinfo.devs, confinfo.devs, false);
-#endif
+                connection_set_host(CONNECTION_HOST_USB);
             }
             return false;
         }
