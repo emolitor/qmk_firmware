@@ -79,13 +79,6 @@ void keyboard_post_init_kb(void) {
     }
     gpio_set_pin_output(USB_POWER_EN_PIN);
 
-#ifdef BLUETOOTH_ENABLE
-    md_send_devctrl(MD_SND_CMD_DEVCTRL_FW_VERSION);   // get the module fw version.
-    md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_BT_EN);  // timeout 30min to sleep in bt mode, enable
-    md_send_devctrl(MD_SND_CMD_DEVCTRL_SLEEP_2G4_EN); // timeout 30min to sleep in 2.4g mode, enable
-    wireless_devs_change(!confinfo.devs, confinfo.devs, false);
-#endif
-
     keyboard_post_init_user();
 }
 
@@ -138,57 +131,10 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-#ifdef BLUETOOTH_ENABLE
-        case OU_USB: {
-            wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
-            return false;
-        }
-        case LT(0, KC_1): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, true);
-            }
-            return false;
-        }
-        case LT(0, KC_2): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, true);
-            }
-            return false;
-        }
-        case LT(0, KC_3): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, true);
-            }
-            return false;
-        }
-        case LT(0, KC_4): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, true);
-            }
-            return false;
-        }
-#endif
     }
 
     return true;
 }
-
-#ifdef BLUETOOTH_ENABLE
-void wireless_devs_change_kb(uint8_t old_devs, uint8_t new_devs, bool reset) {
-    if (confinfo.devs != wireless_get_current_devs()) {
-        confinfo.devs = wireless_get_current_devs();
-        eeconfig_update_kb(confinfo.raw);
-    }
-}
-#endif
 
 static void blink(uint8_t key_index, uint8_t r, uint8_t g, uint8_t b, bool blink) {
     if (blink) {
