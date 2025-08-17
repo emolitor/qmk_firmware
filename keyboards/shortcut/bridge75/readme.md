@@ -24,4 +24,4 @@ puts the output into binding/pairing mode.
 | 0 | OU_2P4G | Select 2.4G |
 
 # Indicators
-To keep it as simple as possible there are no wireless indicators impelemnted.
+To keep it as simple as possible there are no wireless indicators implemented.
