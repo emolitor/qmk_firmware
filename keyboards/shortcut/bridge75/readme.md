@@ -9,7 +9,9 @@ In order to compile this you need to use the complimentary
 with the `wireless-prototype-module` branch.
 
 ## Default Keymap
-The keymap use the QMK Bluetooth/Wireless key codes implemented as follows.
+The keymap use the QMK Bluetooth/Wireless key codes implemented as follows. It
+uses Layer Tap to implement tap or hold. Where Tap select the output and Hold
+puts the output into binding/pairing mode.
 
 | Key | Binding | Description |
 | --- | ------- | ----------- |
@@ -21,3 +23,5 @@ The keymap use the QMK Bluetooth/Wireless key codes implemented as follows.
 | 5 | BT_PRF5 | Select BT 5 |
 | 0 | OU_2P4G | Select 2.4G |
 
+# Indicators
+To keep it as simple as possible there are no wireless indicators impelemnted.
