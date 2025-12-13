@@ -5,6 +5,9 @@
 
 #include "bridge75.h"
 
+#ifdef WIRELESS_ENABLE
+#include "wireless.h"
+
 typedef union {
     uint32_t raw;
     struct {
@@ -154,11 +157,11 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case KC_USB: {
+        case BT_USB: {
             wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
             return false;
         }
-        case LT(0, KC_BT1): {
+        case LT(0, BT_HOST1): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
@@ -166,7 +169,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case LT(0, KC_BT2): {
+        case LT(0, BT_HOST2): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
@@ -174,7 +177,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case LT(0, KC_BT3): {
+        case LT(0, BT_HOST3): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
@@ -182,7 +185,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        case LT(0, KC_2G4): {
+        case LT(0, BT_2_4G): {
             if (record->tap.count && record->event.pressed) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
@@ -308,10 +311,6 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
         connection_indicators();
     }
 
-    if (host_keyboard_led_state().caps_lock) {
-        rgb_matrix_set_color(CAPSLOCK_INDEX, RGB_ADJ_WHITE);
-    }
-
     return true;
 }
 
@@ -413,3 +412,15 @@ void wireless_send_nkro(report_nkro_t *report) {
 //void lpwr_clock_enable_user(void) {
 //    mcu_reset();
 //}
+
+#endif
+
+bool rgb_matrix_indicators_kb(void) {
+    if (!rgb_matrix_indicators_user()) {
+        return false;
+    }
+    if (host_keyboard_led_state().caps_lock ) {
+        rgb_matrix_set_color(CAPSLOCK_INDEX, 0xFF, 0xFF, 0xFF);
+    }
+    return true;
+}

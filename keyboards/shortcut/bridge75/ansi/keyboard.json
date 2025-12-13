@@ -7,6 +7,8 @@
         "suspend_wakeup_delay": 1000
     },
     "rgb_matrix": {
+        "sleep": true,
+        "timeout": 60000,
         "default": {
             "animation": "cycle_left_right",
             "val": 150

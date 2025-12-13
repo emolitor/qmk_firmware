@@ -48,13 +48,27 @@
         "term_per_key": true
     },
     "keycodes": [
-        { "key": "KC_USB" },
-        { "key": "KC_BT1" },
-        { "key": "KC_BT2" },
-        { "key": "KC_BT3" },
-        { "key": "KC_2G4" },
-        { "key": "SLP_FIX" },
-        { "key": "USBSLP" }
+        {
+            "key": "BT_HOST1",
+            "aliases": ["BT1"]
+        },
+        {
+            "key": "BT_HOST2",
+            "aliases": ["BT2"]
+        },
+        {
+            "key": "BT_HOST3",
+            "aliases": ["BT3"]
+        },
+        { "key": "BT_2_4G" },
+        { "key": "BT_USB" },
+        { "key": "BT_SW" },
+        { "key": "BT_VOL" },
+        { "key": "USBSLP" },
+        { "key":
+            "RGB_TEST",
+            "aliases": ["RGBTEST"]
+        }
     ],
     "matrix_pins": {
         "cols": ["C1", "C2", "C3", "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "C4", "C5", "B0", "B1"],
@@ -65,8 +79,6 @@
     },
     "rgb_matrix": {
         "driver": "ws2812",
-        "max_brightness": 225,
-        "sleep": true,
-        "timeout": 60000
+        "max_brightness": 225
     }
 }

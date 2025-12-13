@@ -7,8 +7,6 @@
         "suspend_wakeup_delay": 1000
     },
     "rgb_matrix": {
-        "sleep": true,
-        "timeout": 60000,
         "default": {
             "hue": 0,
             "sat": 0,
