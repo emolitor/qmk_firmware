@@ -1,0 +1,67 @@
+name: EM Build
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "em-*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    container: ghcr.io/qmk/qmk_cli
+
+    steps:
+    - name: Disable safe.directory check
+      run : git config --global --add safe.directory '*'
+
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install Dependencies
+      run: |
+        pip3 install -r requirements-dev.txt
+        qmk setup --home .  --yes
+
+    - name: Checkout Userspace
+      run: |
+        git clone https://github.com/emolitor/qmk_userspace_via/ --branch wireless --single-branch
+        qmk config user.overlay_dir="$(realpath qmk_userspace_via)"
+
+    - name: Set output
+      id: vars
+      run: echo "tag=${GITHUB_REF#refs/*/em-}" >> $GITHUB_OUTPUT
+
+    - name: Build
+      if: always()
+      shell: 'bash {0}'
+      env:
+        RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+      run: |
+        qmk userspace-compile
+        for i in *.bin; do mv "$i" "${i%%.bin*}_$RELEASE_VERSION.bin"; done
+        ls -al
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        generate_release_notes: true
+        prerelease: true
+        files: |
+          neo_neo65_trimode_via_${{ steps.vars.outputs.tag }}.bin
+          neo_neo70_trimode_via_${{ steps.vars.outputs.tag }}.bin
+          neo_neo80_trimode_via_${{ steps.vars.outputs.tag }}.bin
+          neo_neoergo_trimode_via_${{ steps.vars.outputs.tag }}.bin
+          qwertykeys_qk65v2classic_via_${{ steps.vars.outputs.tag }}.bin
+          shortcut_bridge75_ansi_via_${{ steps.vars.outputs.tag }}.bin
+          shortcut_bridge75_ansi_wired_via_${{ steps.vars.outputs.tag }}.bin
+          qmk_userspace_via/keyboards/shortcut/bridge75/ansi/shortcut_bridge75_ansi_via.json
+          shortcut_bridge75_ansi_norgb_via_${{ steps.vars.outputs.tag }}.bin
+          shortcut_bridge75_ansi_norgb_wired_via_${{ steps.vars.outputs.tag }}.bin
+          shortcut_bridge75_iso_via_${{ steps.vars.outputs.tag }}.bin
+          shortcut_bridge75_iso_wired_via_${{ steps.vars.outputs.tag }}.bin
+          qmk_userspace_via/keyboards/shortcut/bridge75/iso/shortcut_bridge75_iso_via.json
