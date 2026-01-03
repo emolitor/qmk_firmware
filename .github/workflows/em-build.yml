@@ -58,10 +58,7 @@ jobs:
           neo_neoergo_trimode_via_${{ steps.vars.outputs.tag }}.bin
           qwertykeys_qk65v2classic_via_${{ steps.vars.outputs.tag }}.bin
           shortcut_bridge75_ansi_via_${{ steps.vars.outputs.tag }}.bin
-          shortcut_bridge75_ansi_wired_via_${{ steps.vars.outputs.tag }}.bin
           qmk_userspace_via/keyboards/shortcut/bridge75/ansi/shortcut_bridge75_ansi_via.json
           shortcut_bridge75_ansi_norgb_via_${{ steps.vars.outputs.tag }}.bin
-          shortcut_bridge75_ansi_norgb_wired_via_${{ steps.vars.outputs.tag }}.bin
           shortcut_bridge75_iso_via_${{ steps.vars.outputs.tag }}.bin
-          shortcut_bridge75_iso_wired_via_${{ steps.vars.outputs.tag }}.bin
           qmk_userspace_via/keyboards/shortcut/bridge75/iso/shortcut_bridge75_iso_via.json

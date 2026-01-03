@@ -23,6 +23,23 @@ typedef union {
 } confinfo_t;
 confinfo_t confinfo;
 
+// Long-press detection for wireless pairing (3 second hold)
+#define LONG_PRESS_TIME_MS 3000
+
+typedef struct {
+    uint32_t press_time;
+    uint16_t keycode;
+    uint8_t  devs;
+} long_pressed_key_t;
+
+static long_pressed_key_t long_pressed_keys[] = {
+    {.keycode = BT_HOST1, .press_time = 0, .devs = DEVS_BT1},
+    {.keycode = BT_HOST2, .press_time = 0, .devs = DEVS_BT2},
+    {.keycode = BT_HOST3, .press_time = 0, .devs = DEVS_BT3},
+    {.keycode = BT_2_4G,  .press_time = 0, .devs = DEVS_2G4},
+};
+#define NUM_LONG_PRESS_KEYS (sizeof(long_pressed_keys) / sizeof(long_pressed_key_t))
+
 uint32_t post_init_timer = 0x00;
 
 uint8_t bat_level    = 0;
@@ -108,11 +125,29 @@ bool lpwr_is_allow_timeout_hook(void) {
 // Forward declaration - defined in quantum/keyboard.c but not in header
 void last_matrix_activity_trigger(void);
 
+// Check for long-press on wireless keys to trigger pairing mode
+static void long_pressed_keys_hook(void) {
+    for (uint8_t i = 0; i < NUM_LONG_PRESS_KEYS; i++) {
+        if ((long_pressed_keys[i].press_time != 0) &&
+            (timer_elapsed32(long_pressed_keys[i].press_time) >= LONG_PRESS_TIME_MS)) {
+            // 3 second hold detected - trigger pairing mode (reset=true)
+            // Only pair if we're already on this device
+            if (confinfo.devs == long_pressed_keys[i].devs && *md_getp_state() != MD_STATE_PAIRING) {
+                wireless_devs_change(confinfo.devs, long_pressed_keys[i].devs, true);
+            }
+            long_pressed_keys[i].press_time = 0;
+        }
+    }
+}
+
 void wireless_housekeeping_task_kb(void) {
     if (confinfo.sleep_off) {
         // Prevent RGB matrix timeout by keeping activity timer fresh
         last_matrix_activity_trigger();
     }
+
+    // Check for long-press on wireless keys
+    long_pressed_keys_hook();
 }
 
 void wireless_post_task(void) {
@@ -178,35 +213,25 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             wireless_devs_change(wireless_get_current_devs(), DEVS_USB, false);
             return false;
         }
-        case LT(0, BT_HOST1): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT1, true);
-            }
-            return false;
-        }
-        case LT(0, BT_HOST2): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT2, true);
-            }
-            return false;
-        }
-        case LT(0, BT_HOST3): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_BT3, true);
-            }
-            return false;
-        }
-        case LT(0, BT_2_4G): {
-            if (record->tap.count && record->event.pressed) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, false);
-            } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
-                wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, true);
+        case BT_HOST1:
+        case BT_HOST2:
+        case BT_HOST3:
+        case BT_2_4G: {
+            // Timer-based long-press detection for wireless pairing
+            // Short press: switch device immediately
+            // Long press (3s): enter pairing mode (handled by long_pressed_keys_hook)
+            for (uint8_t i = 0; i < NUM_LONG_PRESS_KEYS; i++) {
+                if (keycode == long_pressed_keys[i].keycode) {
+                    if (record->event.pressed) {
+                        // Start timer and switch device immediately
+                        long_pressed_keys[i].press_time = timer_read32();
+                        wireless_devs_change(wireless_get_current_devs(), long_pressed_keys[i].devs, false);
+                    } else {
+                        // Clear timer on release
+                        long_pressed_keys[i].press_time = 0;
+                    }
+                    break;
+                }
             }
             return false;
         }
