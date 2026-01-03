@@ -12,6 +12,13 @@
 #undef WB32_SPI_USE_QSPI
 #define WB32_SPI_USE_QSPI TRUE
 
+// Interrupt priorities for wireless module communication stability
+#undef WB32_UART_UART1_IRQ_PRIORITY
+#define WB32_UART_UART1_IRQ_PRIORITY    8
+
+#undef WB32_QSPI_IRQ_PRIORITY
+#define WB32_QSPI_IRQ_PRIORITY          10
+
 // Improved deep sleep bug fix for Bridge75
 //#undef LPWR_UART_WAKEUP_DISABLE
 //#define LPWR_UART_WAKEUP_DISABLE TRUE

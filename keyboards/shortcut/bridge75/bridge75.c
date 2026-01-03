@@ -5,6 +5,10 @@
 
 #include QMK_KEYBOARD_H
 #include "bridge75.h"
+#include "bootloader.h"
+
+// Magic value to detect wakeup from deep sleep (must match lp_sleep.c)
+#define WAKEUP_MAGIC 0x5AA5
 
 #ifdef WIRELESS_ENABLE
 #include "wireless.h"
@@ -99,6 +103,16 @@ bool lpwr_is_allow_timeout_hook(void) {
     }
 
     return true;
+}
+
+// Forward declaration - defined in quantum/keyboard.c but not in header
+void last_matrix_activity_trigger(void);
+
+void wireless_housekeeping_task_kb(void) {
+    if (confinfo.sleep_off) {
+        // Prevent RGB matrix timeout by keeping activity timer fresh
+        last_matrix_activity_trigger();
+    }
 }
 
 void wireless_post_task(void) {
@@ -422,6 +436,33 @@ void wireless_send_nkro(report_nkro_t *report) {
 //void lpwr_clock_enable_user(void) {
 //    mcu_reset();
 //}
+
+// Fast wake from deep sleep optimization
+// Override bootmagic_scan to skip the bootmagic check when waking from deep sleep.
+// GPREG0 survives soft reset but not power cycles, so:
+// - Cold boot: GPREG0 != WAKEUP_MAGIC → run normal bootmagic (can enter bootloader)
+// - Wake from sleep: GPREG0 == WAKEUP_MAGIC → skip bootmagic for fast restart
+void bootmagic_scan(void) {
+    if (PWR->GPREG0 != WAKEUP_MAGIC) {
+        // Cold boot - run normal bootmagic check
+        matrix_scan();
+#if defined(DEBOUNCE) && DEBOUNCE > 0
+        wait_ms(DEBOUNCE * 2);
+#else
+        wait_ms(30);
+#endif
+        matrix_scan();
+
+        // Check if bootmagic key (ESC) is held
+        if (matrix_get_row(BOOTMAGIC_ROW) & (1 << BOOTMAGIC_COLUMN)) {
+            eeconfig_disable();
+            bootloader_jump();
+        }
+    }
+
+    // Set marker so subsequent soft resets also skip bootmagic
+    PWR->GPREG0 = WAKEUP_MAGIC;
+}
 
 #endif
 

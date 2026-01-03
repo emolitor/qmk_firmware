@@ -277,7 +277,11 @@ void wireless_task(void) {
     }
 }
 
+void wireless_housekeeping_task_kb(void) __attribute__((weak));
+void wireless_housekeeping_task_kb(void) {}
+
 void housekeeping_task_kb(void) {
     wireless_task();
     housekeeping_task_usb_suspend();
+    wireless_housekeeping_task_kb();
 }
