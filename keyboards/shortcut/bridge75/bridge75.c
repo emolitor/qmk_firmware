@@ -49,7 +49,6 @@ static long_pressed_key_t long_pressed_keys[] = {
 
 uint32_t post_init_timer = 0x00;
 
-uint8_t bat_level    = 0;
 uint8_t blink_index  = 0;
 bool    blink_fast   = true;
 bool    blink_slow   = true;
@@ -330,10 +329,6 @@ void connection_indicators(void) {
     }
 }
 
-void battery_percent_changed_kb(uint8_t level) {
-    bat_level = level;
-}
-
 bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
     uint8_t current_layer = get_highest_layer(default_layer_state | layer_state);
     blink_index = blink_index + 1;
@@ -366,6 +361,7 @@ bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
             // Check if we are plugged in and charging
             rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_WHITE);
         } else {
+            uint8_t bat_level = *md_getp_bat();
             if (bat_level > 90) {
                 rgb_matrix_set_color(ESCAPE_INDEX, RGB_ADJ_GREEN);
             } else if (bat_level > 50) {
