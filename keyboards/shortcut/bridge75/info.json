@@ -64,9 +64,12 @@
         { "key": "BT_USB" },
         { "key": "BT_SW" },
         { "key": "BT_VOL" },
+        { "key": "LOW_D" },
+        { "key": "COM_D" },
+        { "key": "HIGH_D" },
         { "key": "USBSLP" },
-        { "key":
-            "RGB_TEST",
+        {
+            "key": "RGB_TEST",
             "aliases": ["RGBTEST"]
         }
     ],

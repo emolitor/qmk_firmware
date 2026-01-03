@@ -89,6 +89,10 @@ void mcu_stop_mode(void) __attribute__((weak));
 void mcu_stop_mode(void) {}
 
 void lpwr_enter_stop(void) {
+#ifdef ENTRY_STOP_MODE
+    // Use lp_sleep.c implementation
+    lp_system_sleep();
+#else
     chSysLock();
     lpwr_exti_init();
     chSysUnlock();
@@ -98,6 +102,7 @@ void lpwr_enter_stop(void) {
     lpwr_clock_enable();
     matrix_init_pins();
     chSysEnable();
+#endif
 }
 
 void lpwr_set_timeout_manual(bool enable) {

@@ -3,6 +3,7 @@
 // Copyright 2024 Wind (@yelishang)
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include QMK_KEYBOARD_H
 #include "bridge75.h"
 
 #ifdef WIRELESS_ENABLE
@@ -12,6 +13,8 @@ typedef union {
     uint32_t raw;
     struct {
         uint8_t devs : 3;
+        uint8_t last_devs : 3;
+        bool    sleep_off : 1;
     };
 } confinfo_t;
 confinfo_t confinfo;
@@ -91,7 +94,7 @@ void suspend_wakeup_init_kb(void) {
 }
 
 bool lpwr_is_allow_timeout_hook(void) {
-    if (smsg_is_busy() || gpio_read_pin(BT_CABLE_PIN)) {
+    if (confinfo.sleep_off || smsg_is_busy() || gpio_read_pin(BT_CABLE_PIN)) {
         return false;
     }
 
@@ -190,6 +193,13 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, false);
             } else if (record->event.pressed && *md_getp_state() != MD_STATE_PAIRING) {
                 wireless_devs_change(wireless_get_current_devs(), DEVS_2G4, true);
+            }
+            return false;
+        }
+        case USBSLP: {
+            if (record->event.pressed) {
+                confinfo.sleep_off = !confinfo.sleep_off;
+                eeconfig_update_kb(confinfo.raw);
             }
             return false;
         }

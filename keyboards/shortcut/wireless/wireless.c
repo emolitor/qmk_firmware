@@ -278,6 +278,6 @@ void wireless_task(void) {
 }
 
 void housekeeping_task_kb(void) {
-
     wireless_task();
+    housekeeping_task_usb_suspend();
 }
