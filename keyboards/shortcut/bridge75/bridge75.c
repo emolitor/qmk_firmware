@@ -26,6 +26,13 @@ confinfo_t confinfo;
 // Long-press detection for wireless pairing (3 second hold)
 #define LONG_PRESS_TIME_MS 3000
 
+// USB mode RGB timeout (matches reference: 3 * 52 * 1000 ≈ 2.6 minutes)
+#define USB_RGB_TIMEOUT_MS (3 * 52 * 1000)
+
+// USB mode RGB sleep state tracking
+static bool usb_rgb_off = false;
+static bool usb_rgb_was_enabled = false;
+
 typedef struct {
     uint32_t press_time;
     uint16_t keycode;
@@ -146,6 +153,17 @@ void wireless_housekeeping_task_kb(void) {
         last_matrix_activity_trigger();
     }
 
+    // USB mode RGB timeout - disable RGB and cut LED power after inactivity
+    // This matches the reference implementation behavior when cable is connected
+    if (gpio_read_pin(BT_CABLE_PIN) && !usb_rgb_off && !confinfo.sleep_off) {
+        if (last_input_activity_elapsed() >= USB_RGB_TIMEOUT_MS) {
+            usb_rgb_was_enabled = rgb_matrix_is_enabled();
+            rgb_matrix_disable_noeeprom();
+            gpio_write_pin_high(LED_POWER_EN_PIN);
+            usb_rgb_off = true;
+        }
+    }
+
     // Check for long-press on wireless keys
     long_pressed_keys_hook();
 }
@@ -195,6 +213,15 @@ void md_devs_change(uint8_t devs, bool reset) {
 }
 
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
+    // Wake from USB RGB timeout on any key press
+    if (record->event.pressed && usb_rgb_off) {
+        gpio_write_pin_low(LED_POWER_EN_PIN);
+        if (usb_rgb_was_enabled) {
+            rgb_matrix_enable_noeeprom();
+        }
+        usb_rgb_off = false;
+    }
+
     if (process_record_user(keycode, record) != true) {
         return false;
     }
