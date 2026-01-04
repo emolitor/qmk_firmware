@@ -44,3 +44,7 @@
 
 // Reset on wake deep sleep fix
 #define WB32_WAKE_RESET_HACK
+
+/* RGB Matrix */
+//#define RGB_MATRIX_LED_PROCESS_LIMIT 6   // Process all 6 LEDs per cycle
+#define RGB_MATRIX_LED_FLUSH_LIMIT 26    // Reduce flush frequency to lower CPU overhead
