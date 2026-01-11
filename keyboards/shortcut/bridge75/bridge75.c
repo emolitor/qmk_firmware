@@ -72,27 +72,21 @@ void eeconfig_init_kb(void) {
     eeconfig_init_user();
 }
 
-//void early_hardware_init_post(void) {
-//    gpio_write_pin_low(LED_POWER_EN_PIN);
-//    gpio_set_pin_output(LED_POWER_EN_PIN);
-
-//    // Set GPIO as high input for battery charging state
-//    gpio_set_pin_input(BT_CABLE_PIN);
-//    gpio_set_pin_input_high(BT_CHARGE_PIN);
-//}
-
-void keyboard_post_init_kb(void) {
-    confinfo.raw = eeconfig_read_kb();
-    if (!confinfo.raw) {
-        eeconfig_init_kb();
-    }
-
+void early_hardware_init_post(void) {
+    // Enable LED power
     gpio_write_pin_low(LED_POWER_EN_PIN);
     gpio_set_pin_output(LED_POWER_EN_PIN);
 
     // Set GPIO as high input for battery charging state
     gpio_set_pin_input(BT_CABLE_PIN);
     gpio_set_pin_input_high(BT_CHARGE_PIN);
+}
+
+void keyboard_post_init_kb(void) {
+    confinfo.raw = eeconfig_read_kb();
+    if (!confinfo.raw) {
+        eeconfig_init_kb();
+    }
 
     // Set USB_POWER_EN_PIN state before enabling the output to avoid instability
     if (confinfo.devs == DEVS_USB && gpio_read_pin(BT_CABLE_PIN)) {
