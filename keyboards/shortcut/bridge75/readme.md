@@ -10,19 +10,13 @@ updating the firmware. However there are a few changes that have been made as
 necessary to simplify the implementation or to avoid redundant features which
 are support by QMK.
 
-* The battery indicator is always shown when FN is pressed. When the keyboard
-wakes up from sleep or is turned on the battery indicator will not show for
-a few moments until the battery status is reported by the battery driver.
+* The battery indicator is always shown when FN is pressed.
 * The option to disable RGB was removed as it is redundant. Turn down the RGB
 brigtness to zero if this is desired.
-* The option to keep RGB always on when in USB mode has been removed. This
-will be added back at some point in the future.
 * When in MAC mode the keyboard HUD is BlUE, when in WIN[default] mode the
 keyboard HUD is YELLOW.
-* Some of the RGB settings may have changed due to changes in QMK lighting.
 * This firmware has a deep sleep fix which restarts the keyboard when it comes
-out of sleep. This results in a pause when waking from sleep which drops some
-key presses.
+out of sleep.
 
 
 ## Flashing a new firmware

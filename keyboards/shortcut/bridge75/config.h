@@ -46,5 +46,14 @@
 #define WB32_WAKE_RESET_HACK
 
 /* RGB Matrix */
-//#define RGB_MATRIX_LED_PROCESS_LIMIT 6   // Process all 6 LEDs per cycle
-#define RGB_MATRIX_LED_FLUSH_LIMIT 26    // Reduce flush frequency to lower CPU overhead
+// Process 20 LEDs per cycle (82 total = 5 cycles to complete)
+#define RGB_MATRIX_LED_PROCESS_LIMIT 20
+// Update every 32ms (~30fps) to reduce CPU overhead
+#define RGB_MATRIX_LED_FLUSH_LIMIT 32
+
+// These values are more tolerant of timing variations caused by
+// voltage sag or clock jitter when running on battery power
+#define WS2812_T0H 350   // nanoseconds for 0-bit high (spec: 400 ±150)
+#define WS2812_T1H 900   // nanoseconds for 1-bit high (spec: 800 ±150)
+#define WS2812_T0L 900   // nanoseconds for 0-bit low  (spec: 850 ±150)
+#define WS2812_T1L 350   // nanoseconds for 1-bit low  (spec: 450 ±150)

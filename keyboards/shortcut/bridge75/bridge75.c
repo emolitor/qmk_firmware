@@ -7,6 +7,10 @@
 #include "bridge75.h"
 #include "bootloader.h"
 
+#ifndef BLINK_BASE
+#define BLINK_BASE 128
+#endif
+
 // Magic value to detect wakeup from deep sleep (must match lp_sleep.c)
 #define WAKEUP_MAGIC 0x5AA5
 
@@ -67,6 +71,15 @@ void eeconfig_init_kb(void) {
     eeconfig_update_kb(confinfo.raw);
     eeconfig_init_user();
 }
+
+//void early_hardware_init_post(void) {
+//    gpio_write_pin_low(LED_POWER_EN_PIN);
+//    gpio_set_pin_output(LED_POWER_EN_PIN);
+
+//    // Set GPIO as high input for battery charging state
+//    gpio_set_pin_input(BT_CABLE_PIN);
+//    gpio_set_pin_input_high(BT_CHARGE_PIN);
+//}
 
 void keyboard_post_init_kb(void) {
     confinfo.raw = eeconfig_read_kb();
@@ -332,8 +345,8 @@ void connection_indicators(void) {
 bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
     uint8_t current_layer = get_highest_layer(default_layer_state | layer_state);
     blink_index = blink_index + 1;
-    blink_fast  = (blink_index % 64 == 0) ? !blink_fast : blink_fast;
-    blink_slow  = (blink_index % 128 == 0) ? !blink_slow : blink_slow;
+    blink_fast  = (blink_index % (BLINK_BASE/2) == 0) ? !blink_fast : blink_fast;
+    blink_slow  = (blink_index % BLINK_BASE == 0) ? !blink_slow : blink_slow;
 
     if (!rgb_matrix_indicators_advanced_user(led_min, led_max)) {
         return false;

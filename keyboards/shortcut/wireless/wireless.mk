@@ -23,10 +23,8 @@ ifeq ($(strip $(WIRELESS_ENABLE)), yes)
     ifeq ($(strip $(WIRELESS_LPWR_STOP_ENABLE)), yes)
         OPT_DEFS += -DWIRELESS_LPWR_STOP_ENABLE
         SRC += $(WIRELESS_DIR)/lpwr_wb32.c
-    endif
-
     # Alternative low power implementation matching bridge75wireless lp_sleep.c
-    ifeq ($(strip $(ENTRY_STOP_MODE_ENABLE)), yes)
+	else ifeq ($(strip $(ENTRY_STOP_MODE_ENABLE)), yes)
         OPT_DEFS += -DENTRY_STOP_MODE
         SRC += $(WIRELESS_DIR)/lp_sleep.c
     endif

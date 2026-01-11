@@ -11,3 +11,4 @@
 #define DEVS_BT3_INDEX  4
 #define DEVS_2G4_INDEX  5
 
+#define BLINK_BASE 32
