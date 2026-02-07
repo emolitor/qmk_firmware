@@ -329,7 +329,7 @@ void ws2812_init(void) {
 
     /* Allocate DMA with callback */
     ws2812_dma_stream = dmaStreamAlloc(WS2812_GPIO_DMA_STREAM - WB32_DMA_STREAM(0),
-                                       2,  /* IRQ priority (high) */
+                                       3,  /* IRQ priority — must be >= CORTEX_MAX_KERNEL_PRIORITY (3) */
                                        ws2812_dma_callback, NULL);
 
     if (ws2812_dma_stream == NULL) {

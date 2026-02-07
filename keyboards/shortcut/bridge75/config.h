@@ -41,7 +41,6 @@
 //#define WLS_KEYBOARD_REPORT_KEYS 5
 #define WLS_KEYBOARD_REPORT_KEYS KEYBOARD_REPORT_KEYS
 #define LPWR_TIMEOUT 300000 // 5 Minutes
-
 // Disable UART RX wakeup - keyboard should only wake on key press
 #define LPWR_UART_WAKEUP_DISABLE
 
