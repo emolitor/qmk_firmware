@@ -12,15 +12,16 @@
  *   which is within WS2812 spec (< 9µs reset threshold)
  *
  * Architecture:
- * - Quad buffer: 4 × 504 phases, ISR chains next block on TFR interrupt
- * - Fill thread pre-fills buf[0..3], then yields while ISR advances
- * - Block size 504: ≤511 hardware max, divisible by 3 (bit alignment)
+ * - Double buffer: 2 × 504 phases, ISR chains next block on TFR interrupt
+ * - Fill thread pre-fills buf[0..1], then feeds remaining as ISR advances
+ * - Block size 504: ≤511 hardware max, divisible by 72 (LED alignment)
  * - Reset: 300µs sleep after final DMA block (pin already LOW)
  *
- * Timing (3 phases per bit at 72MHz, PSC=0, ARR=29):
- *   Phase 1 (0-417ns):    Always SET (go high)
- *   Phase 2 (417-833ns):  Bit 0: RESET (go low), Bit 1: NOP (stay high)
- *   Phase 3 (833-1250ns): Bit 0: NOP (stay low), Bit 1: RESET (go low)
+ * Timing (3 phases per bit at 72MHz, PSC=0, ARR=WS2812_PHASE_TICKS-1):
+ *   Default 28 ticks = 389ns per phase (configurable via WS2812_PHASE_TICKS).
+ *   Phase 1: Always SET (go high)
+ *   Phase 2: Bit 0: RESET (go low), Bit 1: NOP (stay high)
+ *   Phase 3: Bit 0: NOP (stay low), Bit 1: RESET (go low)
  *
  * Copyright 2026 emolitor (github.com/emolitor)
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -40,11 +41,11 @@
 #    error "WS2812_GPIO_DMA driver requires WS2812_DI_PIN to be defined"
 #endif
 
-/* Guard against exceeding quad-buffer capacity.
+/* Guard against exceeding double-buffer capacity.
  * 168 LEDs × 72 phases = 12096 = 24 blocks of 504. Beyond this,
- * the fill-time margin (630µs - 282µs = 348µs) may be insufficient. */
+ * the fill-time margin may be insufficient. */
 #if WS2812_LED_COUNT > 168
-#    error "WS2812_LED_COUNT exceeds quad-buffer capacity (max 168)"
+#    error "WS2812_LED_COUNT exceeds double-buffer capacity (max 168)"
 #endif
 
 /* GPIO BSRR configuration - extract port and pin from QMK PAL line definition */
@@ -75,9 +76,14 @@
 #    define WS2812_GPIO_DMA_STREAM WB32_DMA1_STREAM1
 #endif
 
-/* Timing constants at 72MHz */
+/* Timing constants at 72MHz.
+ * WS2812_PHASE_TICKS controls T0H (one phase HIGH for a zero-bit).
+ * Some WS2812 batches reject T0H > ~420ns as a 1-bit (all-white symptom).
+ * 28 ticks = 389ns is safely below that threshold. */
 #define WS2812_TIMER_FREQ    72000000U
-#define WS2812_PHASE_TICKS   30U        /* 30 ticks × 13.89ns = 417ns at 72MHz */
+#ifndef WS2812_PHASE_TICKS
+#    define WS2812_PHASE_TICKS   28U    /* 28 ticks × 13.89ns = 389ns at 72MHz */
+#endif
 
 /* Color channel configuration */
 #ifdef WS2812_RGBW
@@ -92,12 +98,13 @@
 #define WS2812_PHASES_PER_LED  (WS2812_BITS_PER_LED * WS2812_PHASES_PER_BIT)  /* 72 phases per LED */
 
 /* Block DMA configuration:
- * - Block size 504: ≤511 hardware max (9-bit BLOCK_TS), divisible by 3
- * - Quad buffer: 4 × 504 phases = 8064 bytes
+ * - Block size 504: ≤511 hardware max (9-bit BLOCK_TS), divisible by 72 (LED-aligned)
+ * - Double buffer: 2 × 504 phases = 4032 bytes
  * - Total LED phases: WS2812_LED_COUNT × 72
  * - Block count: ceil(LED_PHASES / 504)
  */
 #define WS2812_BLOCK_SIZE    504U
+#define WS2812_LEDS_PER_BLOCK  (WS2812_BLOCK_SIZE / WS2812_PHASES_PER_LED)  /* 7 */
 #define WS2812_LED_PHASES    (WS2812_LED_COUNT * WS2812_PHASES_PER_LED)
 #define WS2812_BLOCK_COUNT   ((WS2812_LED_PHASES + WS2812_BLOCK_SIZE - 1) / WS2812_BLOCK_SIZE)
 
@@ -110,9 +117,10 @@
  * wireless retry/drop logic during DMA stall recovery. */
 #define WS2812_TIMEOUT_MS    5U
 
-/* Quad buffer for block DMA — 4 buffers give 3-block-period (630µs) runway
- * which exceeds fill time (282µs), eliminating CPU/DMA data race */
-static uint32_t ws2812_buf[4][WS2812_BLOCK_SIZE];
+/* Double buffer for block DMA — 2 buffers give 1-block-period runway
+ * (196µs at 28 ticks) which comfortably exceeds fill time (~40µs),
+ * eliminating CPU/DMA data race */
+static uint32_t ws2812_buf[2][WS2812_BLOCK_SIZE];
 
 /* LED color storage for ws2812_set_color API */
 ws2812_led_t ws2812_leds[WS2812_LED_COUNT];
@@ -151,75 +159,55 @@ static inline uint32_t ws2812_get_block_size(uint32_t block) {
 }
 
 /**
- * @brief Fill a buffer with encoded LED phase data (optimized incremental)
+ * @brief Encode one color byte into 24 phases (8 bits × 3 phases)
  *
- * Uses division only once at block start, then increments through phases.
+ * Branchless: uses arithmetic (RSB+MUL on Cortex-M3, both 1 cycle)
+ * instead of if/else branches to avoid pipeline stalls under -Os.
+ *
+ * @param p Pointer to output buffer (24 uint32_t written)
+ * @param byte_val Color byte to encode (MSB first)
+ * @return Pointer past the 24 written phases
+ */
+static inline uint32_t *ws2812_encode_byte(uint32_t *p, uint8_t byte_val) {
+    for (int bit = 7; bit >= 0; bit--) {
+        uint32_t bv = (byte_val >> bit) & 1;
+        /* Phase 1: always SET (go high)
+         * Phase 2: RESET if bit=0, NOP(0) if bit=1  → (1-bv) * RESET
+         * Phase 3: NOP(0) if bit=0, RESET if bit=1  → bv * RESET */
+        p[0] = BSRR_SET;
+        p[1] = (1 - bv) * BSRR_RESET;
+        p[2] = bv * BSRR_RESET;
+        p += 3;
+    }
+    return p;
+}
+
+/**
+ * @brief Fill a buffer with encoded LED phase data (per-LED, branchless)
+ *
+ * Block size (504) is always a multiple of phases-per-LED (72), so every
+ * block starts on an LED boundary. This allows simple per-LED iteration
+ * without mid-LED state tracking or modular arithmetic.
+ *
  * Accesses LED data as raw bytes in memory order, which automatically
  * respects WS2812_BYTE_ORDER (the ws2812_led_t struct layout changes
  * with the byte order setting).
  *
  * @param buf Pointer to buffer to fill (WS2812_BLOCK_SIZE elements)
- * @param start_phase Global phase index to start from
- * @param count Number of phases to fill
+ * @param start_phase Global phase index to start from (LED-aligned)
+ * @param count Number of phases to fill (multiple of WS2812_PHASES_PER_LED)
  */
 static void ws2812_fill_block(uint32_t *buf, uint32_t start_phase, uint32_t count) {
-    /* Compute initial position via division (once per block) */
-    uint32_t led_idx      = start_phase / WS2812_PHASES_PER_LED;
-    uint32_t phase_in_led = start_phase % WS2812_PHASES_PER_LED;
-    uint32_t bit_idx      = phase_in_led / WS2812_PHASES_PER_BIT;
-    uint32_t phase_in_bit = phase_in_led % WS2812_PHASES_PER_BIT;
+    uint32_t led_idx  = start_phase / WS2812_PHASES_PER_LED;
+    uint32_t num_leds = count / WS2812_PHASES_PER_LED;
+    uint32_t *p = buf;
 
-    /* Access LED data as raw bytes in memory order — this automatically
-     * sends bytes in the correct wire order for any WS2812_BYTE_ORDER,
-     * matching the bitbang driver's behavior. */
-    uint8_t *led_data    = (uint8_t *)&ws2812_leds[led_idx];
-    uint32_t byte_idx    = bit_idx / 8;
-    uint32_t bit_in_byte = 7 - (bit_idx % 8);  /* MSB first */
-    uint8_t  color_byte  = led_data[byte_idx];
-    uint8_t  bit_val     = (color_byte >> bit_in_byte) & 1;
-
-    for (uint32_t i = 0; i < count; i++) {
-        /* Encode phase */
-        switch (phase_in_bit) {
-            case 0:
-                buf[i] = BSRR_SET;
-                break;
-            case 1:
-                buf[i] = bit_val ? BSRR_NOP : BSRR_RESET;
-                break;
-            case 2:
-                buf[i] = bit_val ? BSRR_RESET : BSRR_NOP;
-                break;
-        }
-
-        /* Advance to next phase (increment, no division) */
-        phase_in_bit++;
-        if (phase_in_bit >= WS2812_PHASES_PER_BIT) {
-            phase_in_bit = 0;
-            bit_idx++;
-
-            if (bit_idx >= WS2812_BITS_PER_LED) {
-                bit_idx = 0;
-                led_idx++;
-                /* Guard: don't read past the LED array on the final iteration */
-                if (led_idx >= WS2812_LED_COUNT) {
-                    break;
-                }
-                byte_idx = 0;
-                bit_in_byte = 7;
-                led_data = (uint8_t *)&ws2812_leds[led_idx];
-                color_byte = led_data[0];
-            } else {
-                uint32_t new_byte_idx = bit_idx / 8;
-                if (new_byte_idx != byte_idx) {
-                    byte_idx = new_byte_idx;
-                    bit_in_byte = 7;
-                    color_byte = led_data[byte_idx];
-                } else {
-                    bit_in_byte--;
-                }
-            }
-            bit_val = (color_byte >> bit_in_byte) & 1;
+    for (uint32_t n = 0; n < num_leds && led_idx < WS2812_LED_COUNT; n++, led_idx++) {
+        /* Access LED data as raw bytes — automatically sends bytes in
+         * the correct wire order for any WS2812_BYTE_ORDER. */
+        const uint8_t *led_data = (const uint8_t *)&ws2812_leds[led_idx];
+        for (uint32_t ch = 0; ch < WS2812_CHANNELS; ch++) {
+            p = ws2812_encode_byte(p, led_data[ch]);
         }
     }
 }
@@ -285,7 +273,7 @@ static void ws2812_dma_callback(void *p, uint32_t flags) {
 
         if (ws2812_block_idx < WS2812_BLOCK_COUNT) {
             /* More blocks — chain next DMA transfer */
-            uint32_t buf_sel  = ws2812_block_idx % 4;
+            uint32_t buf_sel  = ws2812_block_idx % 2;
             uint32_t blk_size = ws2812_get_block_size(ws2812_block_idx);
 
             dmaStreamSetSource(ws2812_dma_stream, ws2812_buf[buf_sel]);
@@ -293,7 +281,7 @@ static void ws2812_dma_callback(void *p, uint32_t flags) {
             /* Prevent stale timer UIF from triggering an immediate DMA
              * transfer with wrong phase timing at block boundaries.
              * Interrupt-protected: CNT reset → SR clear → arm DMA → UDE enable
-             * must complete within one timer period (30 ticks) to prevent
+             * must complete within one timer period to prevent
              * a timer overflow from setting UIF before UDE is re-enabled.
              *
              * NOTE: WB32 timer SR is rw (not rc_w0 like STM32). Writing
@@ -415,23 +403,13 @@ void ws2812_flush(void) {
         }
     }
 
-    /* Pre-fill all 4 buffers before starting DMA */
+    /* Pre-fill both buffers before starting DMA */
     uint32_t blk0_size = ws2812_get_block_size(0);
     ws2812_fill_block(ws2812_buf[0], 0, blk0_size);
 
     if (WS2812_BLOCK_COUNT > 1) {
         uint32_t blk1_size = ws2812_get_block_size(1);
         ws2812_fill_block(ws2812_buf[1], WS2812_BLOCK_SIZE, blk1_size);
-    }
-
-    if (WS2812_BLOCK_COUNT > 2) {
-        uint32_t blk2_size = ws2812_get_block_size(2);
-        ws2812_fill_block(ws2812_buf[2], 2 * WS2812_BLOCK_SIZE, blk2_size);
-    }
-
-    if (WS2812_BLOCK_COUNT > 3) {
-        uint32_t blk3_size = ws2812_get_block_size(3);
-        ws2812_fill_block(ws2812_buf[3], 3 * WS2812_BLOCK_SIZE, blk3_size);
     }
 
     /* Start transfer: block 0 from buf[0] */
@@ -449,7 +427,7 @@ void ws2812_flush(void) {
      * 2. Start timer (UG event fires harmlessly with UDE=0)
      * 3. With interrupts disabled: reset CNT → clear SR → arm DMA → re-enable UDE
      *    Interrupt protection prevents ISRs from delaying the sequence past one
-     *    timer period (30 ticks), which would allow UIF to set before UDE enable.
+     *    timer period (WS2812_PHASE_TICKS), which would allow UIF to set before UDE enable.
      *
      * NOTE: WB32 timer SR is rw (not rc_w0 like STM32). Writing
      * SR = ~FLAG can SET other bits. Always use SR = 0.
@@ -466,10 +444,10 @@ void ws2812_flush(void) {
     /* Feed remaining blocks from thread context.
      * ISR chains the next block from the pre-filled buffer;
      * we fill the just-released buffer with the block after that.
-     * 4 buffers provide 3-block (630µs) runway which exceeds fill time (282µs),
-     * eliminating the CPU/DMA data race for all 12 blocks.
+     * 2 buffers provide 1-block-period runway (196µs at 28 ticks).
+     * Branchless fill (~40µs) stays well ahead of DMA.
      */
-    uint32_t next_fill = 4;  /* Blocks 0, 1, 2, and 3 already filled */
+    uint32_t next_fill = 2;  /* Blocks 0–1 already filled */
     start = timer_read32();
 
     while (ws2812_transfer_active) {
@@ -480,10 +458,10 @@ void ws2812_flush(void) {
 
         uint32_t current = ws2812_block_idx;  /* volatile read */
 
-        while (next_fill < WS2812_BLOCK_COUNT && current >= (next_fill - 3)) {
+        while (next_fill < WS2812_BLOCK_COUNT && current >= (next_fill - 1)) {
             uint32_t start_phase = next_fill * WS2812_BLOCK_SIZE;
             uint32_t size = ws2812_get_block_size(next_fill);
-            ws2812_fill_block(ws2812_buf[next_fill % 4], start_phase, size);
+            ws2812_fill_block(ws2812_buf[next_fill % 2], start_phase, size);
             next_fill++;
         }
     }

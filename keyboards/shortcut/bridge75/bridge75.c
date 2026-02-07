@@ -73,32 +73,13 @@ void eeconfig_init_kb(void) {
 }
 
 void early_hardware_init_post(void) {
-    // Enable LED power with stabilization sequence
-    // This power cycling helps the LED power rail stabilize on some units
-    // (matches original bridge75wireless behavior)
-    gpio_set_pin_output(LED_POWER_EN_PIN);
+    // Enable LED power
     gpio_write_pin_low(LED_POWER_EN_PIN);
-
-    // Power cycling delay loop - helps stabilize LED power rail
-    // Original uses 200*100 = 20,000 toggles as soft-start
-    for (uint16_t j = 0; j < 200; j++) {
-        for (uint8_t i = 0; i < 100; i++) {
-            gpio_write_pin_high(LED_POWER_EN_PIN);
-            gpio_write_pin_low(LED_POWER_EN_PIN);
-        }
-    }
+    gpio_set_pin_output(LED_POWER_EN_PIN);
 
     // Set GPIO as high input for battery charging state
     gpio_set_pin_input(BT_CABLE_PIN);
     gpio_set_pin_input_high(BT_CHARGE_PIN);
-}
-
-void matrix_init_kb(void) {
-    // Additional LED power stabilization delay after ChibiOS timer is available
-    // This ensures the WS2812 LEDs have stable power before RGB matrix init
-    wait_ms(100);
-
-    matrix_init_user();
 }
 
 void keyboard_post_init_kb(void) {
@@ -243,8 +224,6 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
     // Wake from USB RGB timeout on any key press
     if (record->event.pressed && usb_rgb_off) {
         gpio_write_pin_low(LED_POWER_EN_PIN);
-        // Brief delay for LED power rail to stabilize before RGB matrix sends data
-        wait_us(500);
         if (usb_rgb_was_enabled) {
             rgb_matrix_enable_noeeprom();
         }
