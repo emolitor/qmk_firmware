@@ -47,9 +47,8 @@ void lp_recovery_hook(void);
 
 // PAL callback for wakeup events
 static void lp_palcallback(void *arg) {
-    uint8_t line = (uint32_t)arg & 0xFF;
-
 #ifndef LPWR_UART_WAKEUP_DISABLE
+    uint8_t line = (uint32_t)arg & 0xFF;
     if (line == PAL_PAD(UART_RX_PIN)) {
         lpwr_set_sleep_wakeupcd(LPWR_WAKEUP_UART);
     } else
@@ -120,7 +119,7 @@ static void lp_exti_init(void) {
         if (row_pins[i] != NO_PIN) {
             setPinInputHigh(row_pins[i]);
             waitInputPinDelay();
-            palEnableLineEvent(row_pins[i], PAL_EVENT_MODE_FALLING_EDGE);
+            palEnableLineEvent(row_pins[i], PAL_EVENT_MODE_BOTH_EDGES);
             lp_enable_nvic_for_pad(PAL_PAD(row_pins[i]));
         }
     }
@@ -136,7 +135,7 @@ static void lp_exti_init(void) {
         if (col_pins[i] != NO_PIN) {
             setPinInputHigh(col_pins[i]);
             waitInputPinDelay();
-            palEnableLineEvent(col_pins[i], PAL_EVENT_MODE_FALLING_EDGE);
+            palEnableLineEvent(col_pins[i], PAL_EVENT_MODE_BOTH_EDGES);
             lp_enable_nvic_for_pad(PAL_PAD(col_pins[i]));
         }
     }

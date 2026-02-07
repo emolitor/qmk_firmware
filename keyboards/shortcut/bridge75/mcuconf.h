@@ -19,6 +19,14 @@
 #undef WB32_QSPI_IRQ_PRIORITY
 #define WB32_QSPI_IRQ_PRIORITY          10
 
+// WS2812 GPIO DMA driver uses TIM3 for pacing DMA transfers
+#undef WB32_GPT_USE_TIM3
+#define WB32_GPT_USE_TIM3 TRUE
+
+// WS2812 GPIO DMA driver uses DMA directly (not through a HAL driver)
+#define WB32_DMA_REQUIRED
+
 // Improved deep sleep bug fix for Bridge75
 //#undef LPWR_UART_WAKEUP_DISABLE
 //#define LPWR_UART_WAKEUP_DISABLE TRUE
+

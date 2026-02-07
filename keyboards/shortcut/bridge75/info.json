@@ -78,6 +78,7 @@
         "rows": ["B15", "C6", "C7", "C8", "C9", "B14"]
     },
     "ws2812": {
+        "driver": "custom",
         "pin": "B10"
     },
     "rgb_matrix": {
