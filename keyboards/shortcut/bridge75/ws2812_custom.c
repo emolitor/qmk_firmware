@@ -105,8 +105,10 @@
 #define WS2812_RESET_US      300U
 
 /* Safety timeout: abort DMA if transfer takes longer than this.
- * Normal 82-LED frame takes ~3ms. 10ms gives generous margin. */
-#define WS2812_TIMEOUT_MS    10U
+ * Normal 82-LED frame takes ~3ms. Must be shorter than the wireless
+ * ACK timeout (MD_SNED_PKT_TIMEOUT = 10ms) to avoid triggering
+ * wireless retry/drop logic during DMA stall recovery. */
+#define WS2812_TIMEOUT_MS    5U
 
 /* Quad buffer for block DMA — 4 buffers give 3-block-period (630µs) runway
  * which exceeds fill time (282µs), eliminating CPU/DMA data race */
