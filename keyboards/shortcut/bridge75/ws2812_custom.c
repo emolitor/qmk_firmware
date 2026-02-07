@@ -28,6 +28,7 @@
 
 #include "ws2812.h"
 #include "gpio.h"
+#include "timer.h"
 #include "chibios_config.h"
 
 #if defined(WB32F3G71xx) || defined(WB32FQ95xx)
@@ -103,6 +104,10 @@
 /* Reset pulse: 300µs sleep in thread context after final DMA block */
 #define WS2812_RESET_US      300U
 
+/* Safety timeout: abort DMA if transfer takes longer than this.
+ * Normal 82-LED frame takes ~3ms. 10ms gives generous margin. */
+#define WS2812_TIMEOUT_MS    10U
+
 /* Quad buffer for block DMA — 4 buffers give 3-block-period (630µs) runway
  * which exceeds fill time (282µs), eliminating CPU/DMA data race */
 static uint32_t ws2812_buf[4][WS2812_BLOCK_SIZE];
@@ -125,6 +130,7 @@ static GPTDriver *ws2812_gpt = &WS2812_GPIO_DMA_TIMER;
 /* Forward declarations */
 static void ws2812_dma_callback(void *p, uint32_t flags);
 static void ws2812_fill_block(uint32_t *buf, uint32_t start_phase, uint32_t count);
+static void ws2812_abort_transfer(void);
 
 /* Timer configuration - no callback, DMA handles transfers */
 static const GPTConfig ws2812_gpt_config = {
@@ -146,7 +152,9 @@ static inline uint32_t ws2812_get_block_size(uint32_t block) {
  * @brief Fill a buffer with encoded LED phase data (optimized incremental)
  *
  * Uses division only once at block start, then increments through phases.
- * Inner loop: ~15 cycles/phase (comparisons, shifts, stores).
+ * Accesses LED data as raw bytes in memory order, which automatically
+ * respects WS2812_BYTE_ORDER (the ws2812_led_t struct layout changes
+ * with the byte order setting).
  *
  * @param buf Pointer to buffer to fill (WS2812_BLOCK_SIZE elements)
  * @param start_phase Global phase index to start from
@@ -159,23 +167,14 @@ static void ws2812_fill_block(uint32_t *buf, uint32_t start_phase, uint32_t coun
     uint32_t bit_idx      = phase_in_led / WS2812_PHASES_PER_BIT;
     uint32_t phase_in_bit = phase_in_led % WS2812_PHASES_PER_BIT;
 
-    /* Pre-load current bit value */
+    /* Access LED data as raw bytes in memory order — this automatically
+     * sends bytes in the correct wire order for any WS2812_BYTE_ORDER,
+     * matching the bitbang driver's behavior. */
+    uint8_t *led_data    = (uint8_t *)&ws2812_leds[led_idx];
     uint32_t byte_idx    = bit_idx / 8;
     uint32_t bit_in_byte = 7 - (bit_idx % 8);  /* MSB first */
-    uint8_t  color_byte;
-
-    /* GRB byte order (matches ws2812_led_t struct layout) */
-    switch (byte_idx) {
-        case 0: color_byte = ws2812_leds[led_idx].g; break;
-        case 1: color_byte = ws2812_leds[led_idx].r; break;
-        case 2: color_byte = ws2812_leds[led_idx].b; break;
-#ifdef WS2812_RGBW
-        case 3: color_byte = ws2812_leds[led_idx].w; break;
-#endif
-        default: color_byte = 0; break;
-    }
-
-    uint8_t bit_val = (color_byte >> bit_in_byte) & 1;
+    uint8_t  color_byte  = led_data[byte_idx];
+    uint8_t  bit_val     = (color_byte >> bit_in_byte) & 1;
 
     for (uint32_t i = 0; i < count; i++) {
         /* Encode phase */
@@ -200,23 +199,20 @@ static void ws2812_fill_block(uint32_t *buf, uint32_t start_phase, uint32_t coun
             if (bit_idx >= WS2812_BITS_PER_LED) {
                 bit_idx = 0;
                 led_idx++;
-                /* Reload first byte of next LED */
+                /* Guard: don't read past the LED array on the final iteration */
+                if (led_idx >= WS2812_LED_COUNT) {
+                    break;
+                }
                 byte_idx = 0;
                 bit_in_byte = 7;
-                color_byte = ws2812_leds[led_idx].g;
+                led_data = (uint8_t *)&ws2812_leds[led_idx];
+                color_byte = led_data[0];
             } else {
                 uint32_t new_byte_idx = bit_idx / 8;
                 if (new_byte_idx != byte_idx) {
                     byte_idx = new_byte_idx;
                     bit_in_byte = 7;
-                    switch (byte_idx) {
-                        case 1: color_byte = ws2812_leds[led_idx].r; break;
-                        case 2: color_byte = ws2812_leds[led_idx].b; break;
-#ifdef WS2812_RGBW
-                        case 3: color_byte = ws2812_leds[led_idx].w; break;
-#endif
-                        default: color_byte = 0; break;
-                    }
+                    color_byte = led_data[byte_idx];
                 } else {
                     bit_in_byte--;
                 }
@@ -224,6 +220,25 @@ static void ws2812_fill_block(uint32_t *buf, uint32_t start_phase, uint32_t coun
             bit_val = (color_byte >> bit_in_byte) & 1;
         }
     }
+}
+
+/**
+ * @brief Force-abort an in-progress DMA transfer (thread context only)
+ *
+ * Called from ws2812_flush() when a timeout is detected.
+ * Stops DMA, stops timer, forces pin LOW, clears transfer flag.
+ */
+static void ws2812_abort_transfer(void) {
+    dmaStreamDisable(ws2812_dma_stream);
+    /* Clear stale raw status (TFR/ERR) from the aborted transfer.
+     * Without this, re-enabling interrupt masks on the next frame would
+     * fire a spurious TFR ISR that corrupts block sequencing.
+     * (Normal completion doesn't need this — dmaServeInterrupt() clears
+     * status at line 470 of wb32_dma.c after the callback returns.) */
+    dmaStreamClearInterrupt(ws2812_dma_stream);
+    gptStopTimer(ws2812_gpt);
+    WS2812_GPIO_PORT->BSRR = BSRR_RESET;
+    ws2812_transfer_active = false;
 }
 
 /**
@@ -259,8 +274,11 @@ static void ws2812_dma_callback(void *p, uint32_t flags) {
         return;
     }
 
-    /* TFR — block complete */
-    if (flags & WB32_DMAC_IT_STATE_TFR) {
+    /* TFR — block complete.
+     * Guard: dmaServeInterrupt() checks TFR before ERR and calls
+     * separately, so if both fired for the same block the ERR handler
+     * above already aborted. Skip TFR processing in that case. */
+    if ((flags & WB32_DMAC_IT_STATE_TFR) && ws2812_transfer_active) {
         ws2812_block_idx++;
 
         if (ws2812_block_idx < WS2812_BLOCK_COUNT) {
@@ -384,11 +402,15 @@ void ws2812_flush(void) {
         return;
     }
 
-    /* Wait for any previous transfer.
-     * chThdYield() is a no-op here (CH_CFG_TIME_QUANTUM=0, no other threads).
-     * This is intentional busy-wait — wireless is cooperative polling in main thread. */
+    /* Wait for any previous transfer to complete, with safety timeout.
+     * Normal frame takes ~3ms; timeout at WS2812_TIMEOUT_MS prevents permanent
+     * lockup if DMA stalls (e.g. voltage sag, hardware glitch). */
+    uint32_t start = timer_read32();
     while (ws2812_transfer_active) {
-        chThdYield();
+        if (timer_elapsed32(start) >= WS2812_TIMEOUT_MS) {
+            ws2812_abort_transfer();
+            break;
+        }
     }
 
     /* Pre-fill all 4 buffers before starting DMA */
@@ -446,8 +468,14 @@ void ws2812_flush(void) {
      * eliminating the CPU/DMA data race for all 12 blocks.
      */
     uint32_t next_fill = 4;  /* Blocks 0, 1, 2, and 3 already filled */
+    start = timer_read32();
 
     while (ws2812_transfer_active) {
+        if (timer_elapsed32(start) >= WS2812_TIMEOUT_MS) {
+            ws2812_abort_transfer();
+            break;
+        }
+
         uint32_t current = ws2812_block_idx;  /* volatile read */
 
         while (next_fill < WS2812_BLOCK_COUNT && current >= (next_fill - 3)) {
@@ -456,8 +484,6 @@ void ws2812_flush(void) {
             ws2812_fill_block(ws2812_buf[next_fill % 4], start_phase, size);
             next_fill++;
         }
-
-        chThdYield();  /* No-op (see comment above), intentional busy-wait */
     }
 
     /* WS2812 reset pulse: hold data line low for ≥280µs.
