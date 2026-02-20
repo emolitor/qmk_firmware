@@ -118,12 +118,25 @@ void md_receive_raw_cb(uint8_t *pdata, uint8_t len) {}
 void md_receive_host_cb(bool resume) __attribute__((weak));
 void md_receive_host_cb(bool resume) {}
 
+void md_receive_bat_critical_cb(void) __attribute__((weak));
+void md_receive_bat_critical_cb(void) {}
+
 static void md_receive_msg_task(void) {
-    static uint32_t data_count = 0x00;
-    static uint8_t data_remain = 0x00;
+    static uint32_t data_count    = 0x00;
+    static uint8_t data_remain    = 0x00;
+    static uint32_t receive_timer = 0x00;
+
+    // Reset parser if mid-packet with no data for 50ms (UART desync recovery)
+    if (data_count && !uart_available()) {
+        if (sync_timer_elapsed32(receive_timer) > 50) {
+            data_count = 0;
+        }
+        return;
+    }
 
     while (uart_available()) {
         uint8_t data = uart_read();
+        receive_timer = sync_timer_read32();
 
         switch (data_count) {
             case 0: { // cmd
@@ -193,6 +206,13 @@ static void md_receive_msg_task(void) {
                 } break;
                 case MD_REV_CMD_DEVCTRL: {
                     switch (md_rev_payload[1]) {
+                        case MD_REV_CMD_DEVCTRL_BAT_LOW: {
+                            md_info.bat = 10;
+                        } break;
+                        case MD_REV_CMD_DEVCTRL_BAT_PWROFF: {
+                            md_info.bat = 0;
+                            md_receive_bat_critical_cb();
+                        } break;
                         case MD_REV_CMD_DEVCTRL_PAIRING: {
                             md_info.state = MD_STATE_PAIRING;
                         } break;
@@ -204,6 +224,7 @@ static void md_receive_msg_task(void) {
                         } break;
                         case MD_REV_CMD_DEVCTRL_REJECT: {
                             md_info.state = MD_STATE_REJECT;
+                            md_send_devctrl(MD_SND_CMD_DEVCTRL_PAIR);
                         } break;
                         default:
                             break;

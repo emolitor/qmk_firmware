@@ -113,6 +113,13 @@ bool lpwr_get_timeout_manual(void) {
     return manual_timeout;
 }
 
+// battery critical — force sleep
+void md_receive_bat_critical_cb(void) {
+    if (lpwr_get_state() == LPWR_NORMAL) {
+        manual_timeout = true;
+    }
+}
+
 // 2.4g mode, host state
 void md_receive_host_cb(bool resume) {
 
