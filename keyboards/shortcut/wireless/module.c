@@ -213,6 +213,11 @@ static void md_receive_msg_task(void) {
                             md_info.bat = 0;
                             md_receive_bat_critical_cb();
                         } break;
+                        case MD_REV_CMD_DEVCTRL_MD_WAKEUP: {
+                            if (smsg_get_state() == smsg_state_busy) {
+                                smsg_set_state(smsg_state_retry);
+                            }
+                        } break;
                         case MD_REV_CMD_DEVCTRL_PAIRING: {
                             md_info.state = MD_STATE_PAIRING;
                         } break;
@@ -285,6 +290,35 @@ static void md_send_pkt_task(void) {
     }
 }
 
+// Drain-on-full wrapper around smsg_push(). When the queue is full, runs
+// md_main_task() in a loop to transmit pending messages and process ACKs
+// until space opens up. Provides backpressure for rapid-fire sends (macros).
+static bool md_send_msg(uint8_t *data, uint32_t size) {
+    static bool draining = false;
+
+    if (smsg_push(data, size)) {
+        return true;
+    }
+
+    // Reentrancy guard: if a receive callback (e.g. reject→pair retry)
+    // tries to send while we're already draining, fall back to silent drop.
+    if (draining) {
+        return false;
+    }
+
+    draining = true;
+    uint32_t timeout = sync_timer_read32();
+    while (sync_timer_elapsed32(timeout) < 500) {
+        md_main_task();
+        if (smsg_push(data, size)) {
+            draining = false;
+            return true;
+        }
+    }
+    draining = false;
+    return false;
+}
+
 void md_init(void) {
 
     uart_init(MD_BAUD_RATE);
@@ -346,7 +380,7 @@ void md_send_kb(uint8_t *data) {
     sdata[0] = MD_SND_CMD_SEND_KB;
     memcpy(&sdata[1], data, sizeof(sdata) - 2);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_nkro(uint8_t *data) {
@@ -355,7 +389,7 @@ void md_send_nkro(uint8_t *data) {
     sdata[0] = MD_SND_CMD_SEND_NKRO;
     memcpy(&sdata[1], data, sizeof(sdata) - 2);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_consumer(uint8_t *data) {
@@ -364,7 +398,7 @@ void md_send_consumer(uint8_t *data) {
     sdata[0] = MD_SND_CMD_SEND_CONSUMER;
     memcpy(&sdata[1], data, sizeof(sdata) - 2);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_system(uint8_t *data) {
@@ -373,7 +407,7 @@ void md_send_system(uint8_t *data) {
     sdata[0] = MD_SND_CMD_SEND_SYSTEM;
     memcpy(&sdata[1], data, sizeof(sdata) - 2);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_fn(uint8_t *data) {
@@ -382,7 +416,7 @@ void md_send_fn(uint8_t *data) {
     sdata[0] = MD_SND_CMD_SEND_FN;
     memcpy(&sdata[1], data, sizeof(sdata) - 2);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_mouse(uint8_t *data) {
@@ -391,7 +425,7 @@ void md_send_mouse(uint8_t *data) {
     sdata[0] = MD_SND_CMD_SEND_MOUSE;
     memcpy(&sdata[1], data, sizeof(sdata) - 2);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_devinfo(const char *name) {
@@ -407,7 +441,7 @@ void md_send_devinfo(const char *name) {
 
     memcpy(&sdata[2], name, infolen);
     md_calc_check_sum(sdata, infolen + 2);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_devctrl(uint8_t cmd) {
@@ -416,7 +450,7 @@ void md_send_devctrl(uint8_t cmd) {
     sdata[0] = MD_SND_CMD_DEVCTRL;
     memcpy(&sdata[1], &cmd, sizeof(sdata) - 2);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_manufacturer(char *str, uint8_t len) {
@@ -430,7 +464,7 @@ void md_send_manufacturer(char *str, uint8_t len) {
     sdata[1] = len;
     memcpy(&sdata[2], str, len);
     md_calc_check_sum(sdata, len + 2);
-    smsg_push(sdata, len + 3);
+    md_send_msg(sdata, len + 3);
 }
 
 void md_send_product(char *str, uint8_t len) {
@@ -444,7 +478,7 @@ void md_send_product(char *str, uint8_t len) {
     sdata[1] = len;
     memcpy(&sdata[2], str, len);
     md_calc_check_sum(sdata, len + 2);
-    smsg_push(sdata, len + 3);
+    md_send_msg(sdata, len + 3);
 }
 
 void md_send_vpid(uint16_t vid, uint16_t pid) {
@@ -456,7 +490,7 @@ void md_send_vpid(uint16_t vid, uint16_t pid) {
     sdata[0] = MD_SND_CMD_VPID;
     memcpy(&sdata[1], &vpid, sizeof(vpid));
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_send_raw(uint8_t *data, uint8_t length) {
@@ -469,7 +503,7 @@ void md_send_raw(uint8_t *data, uint8_t length) {
     sdata[0] = MD_SND_CMD_RAW;
     memcpy(&sdata[1], data, length);
     md_calc_check_sum(sdata, sizeof(sdata) - 1);
-    smsg_push(sdata, sizeof(sdata));
+    md_send_msg(sdata, sizeof(sdata));
 }
 
 void md_devs_change(uint8_t devs, bool reset) __attribute__((weak));
