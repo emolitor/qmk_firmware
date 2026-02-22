@@ -1,4 +1,5 @@
 // Copyright 2023 JoyLee (@itarze)
+// Copyright 2025 emolitor (github.com/emolitor)
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #ifdef NO_USB_STARTUP_CHECK
