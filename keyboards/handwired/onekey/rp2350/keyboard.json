@@ -1,0 +1,15 @@
+{
+    "keyboard_name": "Onekey RP2350",
+    "processor": "RP2350",
+    "bootloader": "rp2350",
+    "matrix_pins": {
+        "cols": ["GP4"],
+        "rows": ["GP5"]
+    },
+    "backlight": {
+        "pin": "GP25"
+    },
+    "ws2812": {
+        "pin": "GP25"
+    }
+}
