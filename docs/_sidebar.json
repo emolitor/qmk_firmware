@@ -279,6 +279,7 @@
                             { "text": "Selecting an MCU", "link": "/platformdev_selecting_arm_mcu" },
                             { "text": "Early initialization", "link": "/platformdev_chibios_earlyinit" },
                             { "text": "Raspberry Pi RP2040", "link": "/platformdev_rp2040" },
+                            { "text": "Raspberry Pi RP2350", "link": "/platformdev_rp2350" },
                             { "text": "Proton C", "link": "/platformdev_proton_c" },
                             { "text": "WeAct Blackpill F4x1", "link": "/platformdev_blackpill_f4x1" }
                         ]

@@ -50,7 +50,7 @@
 #endif
 
 // BODGE to make v2 look like v1,3 and 4
-#if defined(USE_ADCV2) || defined(RP2040)
+#if defined(USE_ADCV2) || (defined(RP2040) || defined(RP2350))
 #    if !defined(ADC_SMPR_SMP_1P5) && defined(ADC_SAMPLE_3)
 #        define ADC_SMPR_SMP_1P5 ADC_SAMPLE_3
 #        define ADC_SMPR_SMP_7P5 ADC_SAMPLE_15
@@ -82,7 +82,7 @@
 
 /* User configurable ADC options */
 #ifndef ADC_COUNT
-#    if defined(RP2040) || defined(STM32F0XX) || defined(STM32F1XX) || defined(STM32F4XX) || defined(STM32G0XX) || defined(GD32VF103) || defined(WB32F3G71xx) || defined(WB32FQ95xx) || defined(AT32F415)
+#    if (defined(RP2040) || defined(RP2350)) || defined(STM32F0XX) || defined(STM32F1XX) || defined(STM32F4XX) || defined(STM32G0XX) || defined(GD32VF103) || defined(WB32F3G71xx) || defined(WB32FQ95xx) || defined(AT32F415)
 #        define ADC_COUNT 1
 #    elif defined(STM32F3XX) || defined(STM32G4XX)
 #        define ADC_COUNT 4
@@ -109,7 +109,7 @@
 #endif
 
 // For more sampling rate options, look at hal_adc_lld.h in ChibiOS
-#if !defined(ADC_SAMPLING_RATE) && !defined(RP2040)
+#if !defined(ADC_SAMPLING_RATE) && !(defined(RP2040) || defined(RP2350))
 #    if defined(ADC_SMPR_SMP_1P5)
 #        define ADC_SAMPLING_RATE ADC_SMPR_SMP_1P5
 #    elif defined(ADC_SMPR_SMP_2P5) // STM32L4XX, STM32L4XXP, STM32G4XX, STM32WBXX
@@ -154,7 +154,7 @@ static ADCConversionGroup adcConversionGroup = {
     .smpr2 = ADC_SMPR2_SMP_AN0(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN1(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN2(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN3(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN4(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN5(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN6(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN7(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN8(ADC_SAMPLING_RATE) | ADC_SMPR2_SMP_AN9(ADC_SAMPLING_RATE),
     .smpr1 = ADC_SMPR1_SMP_AN10(ADC_SAMPLING_RATE) | ADC_SMPR1_SMP_AN11(ADC_SAMPLING_RATE) | ADC_SMPR1_SMP_AN12(ADC_SAMPLING_RATE) | ADC_SMPR1_SMP_AN13(ADC_SAMPLING_RATE) | ADC_SMPR1_SMP_AN14(ADC_SAMPLING_RATE) | ADC_SMPR1_SMP_AN15(ADC_SAMPLING_RATE),
 #    endif
-#elif defined(RP2040)
+#elif (defined(RP2040) || defined(RP2350))
 // RP2040 does not have any extra config here
 #else
     .cfgr = ADC_CFGR_CONT | ADC_RESOLUTION,
@@ -353,7 +353,7 @@ __attribute__((weak)) adc_mux pinToMux(pin_t pin) {
         case E14: return TO_MUX( ADC_CHANNEL_IN1,  3 );
         case F0:  return TO_MUX( ADC_CHANNEL_IN10, 0 );
         case F1:  return TO_MUX( ADC_CHANNEL_IN10, 1 );
-#elif defined(RP2040)
+#elif (defined(RP2040) || defined(RP2350))
         case 26U: return TO_MUX(0, 0);
         case 27U: return TO_MUX(1, 0);
         case 28U: return TO_MUX(2, 0);
@@ -420,7 +420,7 @@ int16_t adc_read(adc_mux mux) {
 #    else
     adcConversionGroup.sqr3 = ADC_SQR3_SQ1_N(mux.input);
 #    endif
-#elif defined(RP2040)
+#elif (defined(RP2040) || defined(RP2350))
     adcConversionGroup.channel = mux.input;
     adcConversionGroup.rrobin  = 0U;
 #else
@@ -441,7 +441,7 @@ int16_t adc_read(adc_mux mux) {
         return 0;
     }
 
-#if defined(USE_ADCV2) || defined(RP2040)
+#if defined(USE_ADCV2) || (defined(RP2040) || defined(RP2350))
     // fake 12-bit -> N-bit scale
     return (sampleBuffer[ADC_DUMMY_CONVERSIONS_AT_START]) >> (12 - ADC_RESOLUTION);
 #else

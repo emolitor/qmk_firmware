@@ -76,8 +76,9 @@ You can also use any ARM chip with USB that [ChibiOS](https://www.chibios.org) s
 ### Raspberry Pi
 
 * [RP2040](https://www.raspberrypi.com/documentation/microcontrollers/rp2040.html)
+* [RP2350](https://www.raspberrypi.com/documentation/microcontrollers/silicon.html#rp2350), in both ARM Cortex-M33 and Hazard3 RISC-V mode
 
-For a detailed overview about the RP2040 support by QMK see the [dedicated RP2040 page](platformdev_rp2040).
+For a detailed overview about the RP2040 support by QMK see the [dedicated RP2040 page](platformdev_rp2040); for the RP2350 see the [dedicated RP2350 page](platformdev_rp2350).
 
 ## RISC-V
 

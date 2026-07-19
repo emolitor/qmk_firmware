@@ -33,7 +33,7 @@ interrupt_setting_t store_and_clear_interrupt(void) {
 void restore_interrupt_setting(interrupt_setting_t setting) {
     SREG = setting;
 }
-#elif defined(__arm__)
+#elif defined(PROTOCOL_CHIBIOS)
 #    include <ch.h>
 
 interrupt_setting_t store_and_clear_interrupt(void) {
