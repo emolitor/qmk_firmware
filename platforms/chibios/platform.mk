@@ -296,7 +296,7 @@ EXTRAINCDIRS += $(CHIBIOS)/os/license \
          $(HALCONFDIR) $(CHCONFDIR) \
          $(STARTUPINC) $(KERNINC) $(PORTINC) $(OSALINC) $(OSLIBINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) $(TESTINC) \
-         $(STREAMSINC) $(CHIBIOS)/os/various $(COMMON_VPATH)
+         $(STREAMSINC) $(ALLINC) $(CHIBIOS)/os/various $(COMMON_VPATH)
 
 #
 # QMK specific MCU family support selection.

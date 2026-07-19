@@ -31,6 +31,11 @@
 
 #ifdef WAIT_US_TIMER
 void wait_us(uint16_t duration);
+#elif defined(MCU_RP)
+/* The mainline plain ARMv6-M port has PORT_SUPPORTS_RT FALSE; busy-wait on
+ * the free-running 1MHz TIMER peripheral instead (works pre-kernel and in
+ * ISR context). */
+void wait_us(uint16_t duration);
 #elif PORT_SUPPORTS_RT == TRUE
 #    define wait_us(us)                                            \
         do {                                                       \

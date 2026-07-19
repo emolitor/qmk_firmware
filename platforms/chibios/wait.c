@@ -19,6 +19,16 @@
 
 #include "_wait.h"
 
+#if !defined(WAIT_US_TIMER) && defined(MCU_RP)
+void wait_us(uint16_t duration) {
+    /* TIMERAWL reads the free-running 1MHz timebase without latching; the
+     * unsigned subtraction is wrap-safe. */
+    uint32_t start = TIMER0->TIMERAWL;
+    while ((uint32_t)(TIMER0->TIMERAWL - start) < duration) {
+    }
+}
+#endif
+
 #ifdef WAIT_US_TIMER
 void wait_us(uint16_t duration) {
     static const GPTConfig gpt_cfg = {.frequency = 1000000}; /* 1MHz timer, no callback */

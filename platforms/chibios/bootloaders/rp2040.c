@@ -5,7 +5,6 @@
 #include "bootloader.h"
 #include "gpio.h"
 #include "wait.h"
-#include "pico/bootrom.h"
 
 #if !defined(RP2040_BOOTLOADER_DOUBLE_TAP_RESET_LED)
 #    define RP2040_BOOTLOADER_DOUBLE_TAP_RESET_LED_MASK 0U
@@ -17,7 +16,7 @@ __attribute__((weak)) void mcu_reset(void) {
     NVIC_SystemReset();
 }
 void bootloader_jump(void) {
-    reset_usb_boot(RP2040_BOOTLOADER_DOUBLE_TAP_RESET_LED_MASK, 0U);
+    rpRomResetUsbBoot(RP2040_BOOTLOADER_DOUBLE_TAP_RESET_LED_MASK, 0U);
 }
 
 void enter_bootloader_mode_if_requested(void) {}
@@ -33,25 +32,27 @@ static volatile uint32_t __attribute__((section(".ram0.bootloader_magic"))) magi
 const uint32_t                                                              magic_token = 0xCAFEB0BA;
 
 // We can not use the __early_init / enter_bootloader_mode_if_requested hook as
-// we depend on an already initialized system with usable memory regions and
-// populated function pointer tables to the optimized math functions in the
-// bootrom. This function is called just prior to main.
+// we depend on an already initialized system with usable memory regions. This
+// function is called just prior to main. Clocks (and the watchdog tick that
+// feeds the TIMER peripheral) are already up: the ChibiOS board file runs
+// rp_clock_init() from __early_init.
 void __late_init(void) {
-    // All clocks have to be enabled before jumping to the bootloader function,
-    // otherwise the bootrom will be stuck infinitely.
-    clocks_init();
-
     if (magic_location != magic_token) {
         magic_location = magic_token;
         // ChibiOS is not initialized at this point, so sleeping is only
-        // possible via busy waiting.
-        wait_us(RP2040_BOOTLOADER_DOUBLE_TAP_RESET_TIMEOUT * 1000U);
+        // possible via busy waiting on the TIMER peripheral, which has to be
+        // released from reset first. wait_us() takes a uint16_t, so wait in
+        // millisecond steps.
+        rp_peripheral_unreset(RESETS_ALLREG_TIMER0);
+        for (uint32_t ms = RP2040_BOOTLOADER_DOUBLE_TAP_RESET_TIMEOUT; ms > 0U; ms--) {
+            wait_us(1000U);
+        }
         magic_location = 0;
         return;
     }
 
     magic_location = 0;
-    reset_usb_boot(RP2040_BOOTLOADER_DOUBLE_TAP_RESET_LED_MASK, 0U);
+    rpRomResetUsbBoot(RP2040_BOOTLOADER_DOUBLE_TAP_RESET_LED_MASK, 0U);
 }
 
 #endif

@@ -23,12 +23,12 @@
 
 #if defined(MCU_RP)
 #    define CPU_CLOCK RP_CORE_CLK
-// ChibiOS uses the RP2040 timer peripheral as its real time counter, this timer
-// is monotonic and running at 1MHz.
+// ChibiOS uses a monotonic 1MHz timebase as its real time counter (the TIMER
+// peripheral on ARM, MTIME on RP2350 RISC-V).
 #    define REALTIME_COUNTER_CLOCK 1000000
 
 #    define USE_GPIOV1
-#    define PAL_OUTPUT_TYPE_OPENDRAIN STATIC_ASSERT(0, "RP2040 has no Open Drain GPIO configuration, setting this is not possible");
+#    define PAL_OUTPUT_TYPE_OPENDRAIN STATIC_ASSERT(0, "The RP family has no Open Drain GPIO configuration, setting this is not possible");
 
 /* Aliases for GPIO PWM channels - every pin has at least one PWM channel
  * assigned */
@@ -57,6 +57,9 @@
 #        define I2C1_SDA_PAL_MODE (PAL_MODE_ALTERNATE_I2C | PAL_RP_PAD_SLEWFAST | PAL_RP_PAD_PUE | PAL_RP_PAD_DRIVE4)
 #    endif
 
+// The mainline RP I2Cv1 driver uses the same single-field {baudrate}
+// I2CConfig as the old ChibiOS-Contrib driver; this selects the matching
+// initializer in drivers/i2c_master.c.
 #    define USE_I2CV1_CONTRIB
 #    if !defined(I2C1_CLOCK_SPEED)
 #        define I2C1_CLOCK_SPEED 400000

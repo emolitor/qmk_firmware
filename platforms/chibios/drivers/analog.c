@@ -421,7 +421,8 @@ int16_t adc_read(adc_mux mux) {
     adcConversionGroup.sqr3 = ADC_SQR3_SQ1_N(mux.input);
 #    endif
 #elif defined(RP2040)
-    adcConversionGroup.channel_mask = 1 << mux.input;
+    adcConversionGroup.channel = mux.input;
+    adcConversionGroup.rrobin  = 0U;
 #else
     adcConversionGroup.sqr[0] = ADC_SQR1_SQ1_N(mux.input)
 #    if ADC_DUMMY_CONVERSIONS_AT_START >= 1

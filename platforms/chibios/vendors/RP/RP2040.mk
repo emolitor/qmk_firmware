@@ -19,6 +19,11 @@ ADEFS  += -DCRT0_VTOR_INIT=1 \
 
 CFLAGS += -DNDEBUG
 
+# The bootrom function/data lookup tables live at constant near-zero
+# addresses; stop GCC's array-bounds analysis from treating those constant
+# pointers as null-page accesses (same workaround the pico-sdk uses).
+CFLAGS += --param=min-pagesize=0
+
 #
 # Multi-flash-chip second stage bootloaders, selected via RP2040_FLASH_*
 # defines. The matching ChibiOS-bundled default boot2 is suppressed in
