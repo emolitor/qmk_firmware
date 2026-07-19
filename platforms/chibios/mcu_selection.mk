@@ -185,6 +185,82 @@ ifneq ($(findstring RP2040, $(MCU)),)
   FIRMWARE_FORMAT ?= uf2
 endif
 
+ifneq ($(findstring RP2350, $(MCU)),)
+  ## Settings shared between the Cortex-M33 and Hazard3 RISC-V modes
+  MCU_FAMILY = RP
+  MCU_SERIES = RP2350
+
+  # The RP2350 port is mainlined in ChibiOS; force its platform makefiles in
+  # case a pinned ChibiOS-Contrib ever grows a directory of the same name.
+  ifneq ($(findstring RP2350_RISCV, $(MCU)),)
+    PLATFORM_MK = $(CHIBIOS)/os/hal/ports/RP/RP2350/platform_riscv.mk
+  else
+    PLATFORM_MK = $(CHIBIOS)/os/hal/ports/RP/RP2350/platform.mk
+  endif
+
+  # Board: it should exist either in <chibios>/os/hal/boards/,
+  # <keyboard_dir>/boards/, or drivers/boards/
+  BOARD ?= GENERIC_RP_RP2350
+
+  FIRMWARE_FORMAT ?= uf2
+
+  ifneq ($(findstring RP2350_RISCV, $(MCU)),)
+    ## Hazard3 RISC-V mode
+    # 'override' so that arch selection also works when the MCU is passed on
+    # the make command line (qmk compile -e MCU=RP2350_RISCV).
+    override MCU = risc-v
+
+    # Mainline ChibiOS kernel port/startup family
+    CHIBIOS_PORT = RISCV-HAZARD3
+
+    # Hazard3 is RV32IMAC plus the Zba/Zbb/Zbs/Zbkb bit-manipulation and
+    # Zcb/Zcmp code-size extensions. Zicsr/Zifencei are spelled out
+    # explicitly as newer GCC versions split them from the base ISA.
+    MCU_ARCH = rv32imac_zba_zbb_zbs_zbkb_zcb_zcmp_zicsr_zifencei
+    MCU_ABI = ilp32
+    MCU_CMODEL = medlow
+    # With Zcmp in -march this emits cm.push/cm.popret prologues/epilogues.
+    MCU_ARCH_OPTS = -msave-restore
+
+    # Startup code to use
+    #  - it should exist in <chibios>/os/common/startup/RISCV-HAZARD3/compilers/GCC/mk/
+    MCU_STARTUP ?= rp2350_riscv
+
+    # Linker script to use
+    # - it should exist either in
+    #   <chibios>/os/common/startup/RISCV-HAZARD3/compilers/GCC/ld/ or <keyboard_dir>/ld/
+    STARTUPLD = $(CHIBIOS)/os/common/startup/RISCV-HAZARD3/compilers/GCC/ld
+    MCU_LDSCRIPT ?= RP2350_RISCV_FLASH
+    LDFLAGS += -L $(STARTUPLD)
+
+    # Default UF2 Bootloader settings
+    UF2_FAMILY ?= RP2350_RISCV
+  else
+    ## ARM Cortex-M33 mode
+    override MCU = cortex-m33
+
+    CHIBIOS_PORT = ARMv8-M-ML-ALT
+
+    # Cortex-M33 single-precision FPv5 FPU
+    USE_FPU ?= yes
+    USE_FPU_OPT ?= -mfloat-abi=softfp -mfpu=fpv5-sp-d16
+
+    # Startup code to use
+    #  - it should exist in <chibios>/os/common/startup/ARMCMx/compilers/GCC/mk/
+    MCU_STARTUP ?= rp2350
+
+    # Linker script to use
+    # - it should exist either in
+    #   <chibios>/os/common/startup/ARMCMx/compilers/GCC/ld/ or <keyboard_dir>/ld/
+    STARTUPLD = $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/ld
+    MCU_LDSCRIPT ?= RP2350_FLASH
+    LDFLAGS += -L $(STARTUPLD)
+
+    # Default UF2 Bootloader settings
+    UF2_FAMILY ?= RP2350_ARM_S
+  endif
+endif
+
 ifneq ($(findstring STM32F042, $(MCU)),)
   # Cortex version
   MCU = cortex-m0

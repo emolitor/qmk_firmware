@@ -1,0 +1,5 @@
+BOARDSRC = $(CHIBIOS)/os/hal/boards/RP_PICO2_RP2350/board.c
+BOARDINC = $(CHIBIOS)/os/hal/boards/RP_PICO2_RP2350
+
+ALLCSRC += $(BOARDSRC)
+ALLINC  += $(BOARDINC)

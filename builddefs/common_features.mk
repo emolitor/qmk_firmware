@@ -235,7 +235,7 @@ ifneq ($(strip $(EEPROM_DRIVER)),none)
           # True EEPROM on STM32L0xx, L1xx
           OPT_DEFS += -DEEPROM_DRIVER -DEEPROM_STM32_L0_L1
           SRC += eeprom_driver.c eeprom_stm32_L0_L1.c
-        else ifneq ($(filter $(MCU_SERIES),RP2040),)
+        else ifneq ($(filter $(MCU_SERIES),RP2040 RP2350),)
           # Wear-leveling EEPROM implementation, backed by the ChibiOS EFL
           # driver on top of the RP XIP flash
           OPT_DEFS += -DEEPROM_DRIVER -DEEPROM_WEAR_LEVELING
@@ -1029,7 +1029,7 @@ endif
 
 ifeq ($(strip $(UART_DRIVER_REQUIRED)), yes)
     ifeq ($(strip $(PLATFORM)), CHIBIOS)
-        ifneq ($(filter $(MCU_SERIES),RP2040),)
+        ifneq ($(filter $(MCU_SERIES),RP2040 RP2350),)
             OPT_DEFS += -DHAL_USE_SIO=TRUE
             QUANTUM_LIB_SRC += uart_sio.c
         else
