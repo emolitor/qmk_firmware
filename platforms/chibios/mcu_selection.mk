@@ -145,23 +145,32 @@ ifneq ($(findstring RP2040, $(MCU)),)
   # Cortex version
   MCU = cortex-m0plus
 
-  # ARM version, CORTEX-M0/M1 are 6, CORTEX-M3/M4/M7 are 7
-  CHIBIOS_PORT = ARMv6-M-RP2
+  # The RP family is mainlined in ChibiOS; QMK runs single-core, so the
+  # plain (non-SMP) ARMv6-M port is used.
+  CHIBIOS_PORT = ARMv6-M
 
   ## chip/board settings
   # - the next two should match the directories in
-  #   <chibios[-contrib]>/os/hal/ports/$(MCU_PORT_NAME)/$(MCU_SERIES)
-  #   OR
-  #   <chibios[-contrib]>/os/hal/ports/$(MCU_FAMILY)/$(MCU_SERIES)
+  #   <chibios>/os/hal/ports/$(MCU_FAMILY)/$(MCU_SERIES)
   MCU_FAMILY = RP
   MCU_SERIES = RP2040
 
+  # The pinned ChibiOS-Contrib still carries a legacy RP2040 overlay at the
+  # same path; force the mainline platform makefile.
+  PLATFORM_MK = $(CHIBIOS)/os/hal/ports/RP/RP2040/platform.mk
+
   # Linker script to use
-  # - it should exist either in <chibios>/os/common/ports/ARMCMx/compilers/GCC/ld/
-  #   or <keyboard_dir>/ld/
-  STARTUPLD_CONTRIB = $(CHIBIOS_CONTRIB)/os/common/startup/ARMCMx/compilers/GCC/ld
-  MCU_LDSCRIPT ?= RP2040_FLASH_TIMECRIT
-  LDFLAGS += -L $(STARTUPLD_CONTRIB)
+  # - it should exist either in
+  #   <chibios>/os/common/startup/ARMCMx/compilers/GCC/ld/ or <keyboard_dir>/ld/
+  STARTUPLD = $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/ld
+  MCU_LDSCRIPT ?= RP2040_FLASH
+  LDFLAGS += -L $(STARTUPLD)
+
+  # QMK ships its own multi-flash-chip second stage bootloaders
+  # (platforms/chibios/vendors/RP/stage2_bootloaders.c); suppress the
+  # ChibiOS-bundled default boot2 (defined-empty beats the '?=' default in
+  # startup_rp2040.mk).
+  RP2040_BOOT_STAGE2 :=
 
   # Startup code to use
   #  - it should exist in <chibios>/os/common/startup/ARMCMx/compilers/GCC/mk/

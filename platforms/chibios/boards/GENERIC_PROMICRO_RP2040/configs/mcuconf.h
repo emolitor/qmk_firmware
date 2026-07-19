@@ -42,10 +42,10 @@
  * IRQ system settings.
  */
 #define RP_IRQ_SYSTICK_PRIORITY             2
-#define RP_IRQ_TIMER_ALARM0_PRIORITY        2
-#define RP_IRQ_TIMER_ALARM1_PRIORITY        2
-#define RP_IRQ_TIMER_ALARM2_PRIORITY        2
-#define RP_IRQ_TIMER_ALARM3_PRIORITY        2
+#define RP_IRQ_TIMER0_ALARM0_PRIORITY        2
+#define RP_IRQ_TIMER0_ALARM1_PRIORITY        2
+#define RP_IRQ_TIMER0_ALARM2_PRIORITY        2
+#define RP_IRQ_TIMER0_ALARM3_PRIORITY        2
 #define RP_IRQ_ADC1_PRIORITY                3
 #define RP_IRQ_UART0_PRIORITY               3
 #define RP_IRQ_UART1_PRIORITY               3
@@ -104,7 +104,7 @@
 /*
  * USB driver system settings.
  */
-#define RP_USB_USE_USBD0                    TRUE
+#define RP_USB_USE_USB1                    TRUE
 #define RP_USB_FORCE_VBUS_DETECT            TRUE
 #define RP_USE_EXTERNAL_VBUS_DETECT         FALSE
 #define RP_USB_USE_ERROR_DATA_SEQ_INTR      FALSE
