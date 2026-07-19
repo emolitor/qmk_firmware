@@ -29,6 +29,7 @@
 #     at32-dfu     AT32 USB DFU in ROM
 #     tinyuf2      TinyUF2
 #     rp2040       Raspberry Pi RP2040
+#     rp2350       Raspberry Pi RP2350 (both ARM and RISC-V mode)
 # Current options for RISC-V:
 #     gd32v-dfu    GD32V USB DFU in ROM
 #
@@ -115,6 +116,10 @@ endif
 ifeq ($(strip $(BOOTLOADER)), rp2040)
     OPT_DEFS += -DBOOTLOADER_RP2040
     BOOTLOADER_TYPE = rp2040
+endif
+ifeq ($(strip $(BOOTLOADER)), rp2350)
+    OPT_DEFS += -DBOOTLOADER_RP2350
+    BOOTLOADER_TYPE = rp2350
 endif
 ifeq ($(strip $(BOOTLOADER)), wb32-dfu)
     OPT_DEFS += -DBOOTLOADER_WB32_DFU
