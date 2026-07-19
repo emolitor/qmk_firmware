@@ -34,12 +34,23 @@ CHIBIOS_CONTRIB = $(TOP_DIR)/lib/chibios-contrib
 
 ifeq ($(strip $(MCU)), risc-v)
     # RISC-V Support
-    # As of 7.4.2021 there is only one supported RISC-V platform in Chibios-Contrib,
-    # therefore all required settings are hard-coded
-    USE_CHIBIOS_CONTRIB = yes
-    STARTUP_MK = $(CHIBIOS_CONTRIB)/os/common/startup/RISCV-ECLIC/compilers/GCC/mk/startup_$(MCU_STARTUP).mk
-    PORT_V = $(CHIBIOS_CONTRIB)/os/common/ports/RISCV-ECLIC/compilers/GCC/mk/port.mk
-    RULESPATH = $(CHIBIOS_CONTRIB)/os/common/startup/RISCV-ECLIC/compilers/GCC
+    # The historical RISCV-ECLIC port (GD32VF103) lives in ChibiOS-Contrib;
+    # mainline ChibiOS RISC-V ports (e.g. RISCV-HAZARD3 for the RP2350) are
+    # selected by setting CHIBIOS_PORT in mcu_selection.mk.
+    CHIBIOS_PORT ?=
+    ifeq ("$(CHIBIOS_PORT)","")
+        CHIBIOS_PORT = RISCV-ECLIC
+    endif
+    ifeq ($(strip $(CHIBIOS_PORT)), RISCV-ECLIC)
+        USE_CHIBIOS_CONTRIB = yes
+        STARTUP_MK = $(CHIBIOS_CONTRIB)/os/common/startup/RISCV-ECLIC/compilers/GCC/mk/startup_$(MCU_STARTUP).mk
+        PORT_V = $(CHIBIOS_CONTRIB)/os/common/ports/RISCV-ECLIC/compilers/GCC/mk/port.mk
+        RULESPATH = $(CHIBIOS_CONTRIB)/os/common/startup/RISCV-ECLIC/compilers/GCC
+    else
+        STARTUP_MK = $(CHIBIOS)/os/common/startup/$(CHIBIOS_PORT)/compilers/GCC/mk/startup_$(MCU_STARTUP).mk
+        PORT_V = $(CHIBIOS)/os/common/ports/$(CHIBIOS_PORT)/compilers/GCC/mk/port.mk
+        RULESPATH = $(CHIBIOS)/os/common/startup/$(CHIBIOS_PORT)/compilers/GCC
+    endif
 else
     # ARM Support
     CHIBIOS_PORT ?=
@@ -375,14 +386,14 @@ ifeq ($(strip $(MCU)), risc-v)
     # RISC-V toolchain specific configuration
     # Find suitable GCC compiler
     ifeq ($(strip $(TOOLCHAIN)),)
-        ifneq ($(shell which riscv32-unknown-elf-gcc 2>/dev/null),)
+        ifneq ($(shell which riscv-none-elf-gcc 2>/dev/null),)
+            TOOLCHAIN = riscv-none-elf-
+        else ifneq ($(shell which riscv32-unknown-elf-gcc 2>/dev/null),)
             TOOLCHAIN = riscv32-unknown-elf-
+        else ifneq ($(shell which riscv64-unknown-elf-gcc 2>/dev/null),)
+            TOOLCHAIN = riscv64-unknown-elf-
         else
-            ifneq ($(shell which riscv64-unknown-elf-gcc 2>/dev/null),)
-                TOOLCHAIN = riscv64-unknown-elf-
-            else
-                $(call CATASTROPHIC_ERROR,Missing toolchain,No RISC-V toolchain found. Can't find riscv32-unknown-elf-gcc or riscv64-unknown-elf-gcc found in your systems PATH variable. Please install a valid toolchain and make it accessible!)
-            endif
+            $(call CATASTROPHIC_ERROR,Missing toolchain,No RISC-V toolchain found. Can't find riscv-none-elf-gcc, riscv32-unknown-elf-gcc or riscv64-unknown-elf-gcc in your systems PATH variable. Please install a valid toolchain and make it accessible!)
         endif
     endif
 
@@ -400,20 +411,25 @@ ifeq ($(strip $(MCU)), risc-v)
 
         # Tell QMK that we are compiling with picolibc.
         OPT_DEFS += -DUSE_PICOLIBC
+    else ifeq ($(shell $(TOOLCHAIN)gcc --specs=nano.specs -E - 2>/dev/null >/dev/null </dev/null ; echo $$?),0)
+        # No picolibc (e.g. the xPack riscv-none-elf toolchain); use
+        # newlib-nano to keep the printf/malloc footprint sane.
+        TOOLCHAIN_CFLAGS = --specs=nano.specs
     endif
 
-    # MCU architecture flags
+    # MCU architecture flags. MCU_ARCH_OPTS carries additional
+    # architecture-specific options (e.g. -msave-restore).
     MCUFLAGS = -march=$(MCU_ARCH) \
                -mabi=$(MCU_ABI) \
                -mcmodel=$(MCU_CMODEL) \
-               -mstrict-align
+               -mstrict-align $(MCU_ARCH_OPTS)
 
     # Deal with different arch revisions and gcc renaming them
     ifneq ($(shell echo 'int main() { asm("csrc 0x300,8"); return 0; }' | $(TOOLCHAIN)gcc $(MCUFLAGS) $(TOOLCHAIN_CFLAGS) -x c -o /dev/null - 2>/dev/null >/dev/null; echo $$?),0)
         MCUFLAGS = -march=$(MCU_ARCH)_zicsr \
                    -mabi=$(MCU_ABI) \
                    -mcmodel=$(MCU_CMODEL) \
-                   -mstrict-align
+                   -mstrict-align $(MCU_ARCH_OPTS)
         ifneq ($(shell echo 'int main() { asm("csrc 0x300,8"); return 0; }' | $(TOOLCHAIN)gcc $(MCUFLAGS) $(TOOLCHAIN_CFLAGS) -x c -o /dev/null - 2>/dev/null >/dev/null; echo $$?),0)
             $(call CATASTROPHIC_ERROR,Incompatible toolchain,No compatible RISC-V toolchain found. Can't work out correct architecture.)
         endif

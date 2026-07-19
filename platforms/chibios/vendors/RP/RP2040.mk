@@ -1,7 +1,8 @@
 #
 # Raspberry Pi RP2040 specific drivers and build glue
 ##############################################################################
-COMMON_VPATH += $(PLATFORM_PATH)/$(PLATFORM_KEY)/$(DRIVER_DIR)/vendor/$(MCU_FAMILY)/$(MCU_SERIES)
+# The PIO-based vendor drivers are shared across the RP family.
+COMMON_VPATH += $(PLATFORM_PATH)/$(PLATFORM_KEY)/$(DRIVER_DIR)/vendor/RP/common
 
 # Activate the ChibiOS DMA and PIO subsystems for the QMK vendor drivers.
 ifeq ($(strip $(WS2812_DRIVER)), vendor)

@@ -23,6 +23,16 @@
 
 #if defined(MCU_RP)
 #    define CPU_CLOCK RP_CORE_CLK
+
+#    if defined(__riscv)
+/* The Hazard3 NVIC compatibility shim (os/hal/ports/common/RISCV-HAZARD3)
+ * accepts ChibiOS logical priorities 0..3 (0 = most urgent); all levels are
+ * kernel-safe on this port. Provide the Cortex name used by the shared PIO
+ * vendor drivers. */
+#        if !defined(CORTEX_MAX_KERNEL_PRIORITY)
+#            define CORTEX_MAX_KERNEL_PRIORITY 0U
+#        endif
+#    endif
 // ChibiOS uses a monotonic 1MHz timebase as its real time counter (the TIMER
 // peripheral on ARM, MTIME on RP2350 RISC-V).
 #    define REALTIME_COUNTER_CLOCK 1000000
