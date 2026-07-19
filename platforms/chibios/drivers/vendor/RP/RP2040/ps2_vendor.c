@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "gpio.h"
-#include "hardware/pio.h"
-#include "hardware/clocks.h"
+#include <hal.h>
 #include "ps2.h"
 #include "debug.h"
 
 #if !defined(MCU_RP)
-#    error PIO Driver is only available for Raspberry Pi 2040 MCUs!
+#    error PIO Driver is only available for Raspberry Pi RP MCUs!
 #endif
 
 #if defined(PS2_ENABLE)
@@ -33,24 +32,12 @@
 #    error PS/2 clock and data pin must be consecutive!
 #endif
 
-static inline void pio_serve_interrupt(void);
+static void pio_serve_interrupt(void* param, uint32_t ints);
 
 #if defined(PS2_PIO_USE_PIO1)
-static const PIO pio = pio1;
-
-OSAL_IRQ_HANDLER(RP_PIO1_IRQ_0_HANDLER) {
-    OSAL_IRQ_PROLOGUE();
-    pio_serve_interrupt();
-    OSAL_IRQ_EPILOGUE();
-}
+static const rp_pio_block_t* pio_block = RP_PIO1_BLOCK;
 #else
-static const PIO pio = pio0;
-
-OSAL_IRQ_HANDLER(RP_PIO0_IRQ_0_HANDLER) {
-    OSAL_IRQ_PROLOGUE();
-    pio_serve_interrupt();
-    OSAL_IRQ_EPILOGUE();
-}
+static const rp_pio_block_t* pio_block = RP_PIO0_BLOCK;
 #endif
 
 #define PS2_WRAP_TARGET 0
@@ -84,13 +71,13 @@ static const uint16_t ps2_program_instructions[] = {
 };
 // clang-format on
 
-static const struct pio_program ps2_program = {
+static const rp_pio_program_t ps2_program = {
     .instructions = ps2_program_instructions,
     .length       = 21,
     .origin       = -1,
 };
 
-static int                state_machine = -1;
+static const rp_pio_sm_t* state_machine = NULL;
 static thread_reference_t tx_thread     = NULL;
 
 #define BUFFER_SIZE 32
@@ -99,23 +86,21 @@ static __attribute__((aligned(4))) uint8_t pio_rx_buffer[BQ_BUFFER_SIZE(BUFFER_S
 
 uint8_t ps2_error = PS2_ERR_NONE;
 
-void pio_serve_interrupt(void) {
-    uint32_t irqs = pio->ints0;
-
-    if (irqs & (PIO_IRQ0_INTF_SM0_RXNEMPTY_BITS << state_machine)) {
+static void pio_serve_interrupt(void* param, uint32_t ints) {
+    if (ints & PIO_IRQ_RXNEMPTY(state_machine->smidx)) {
         osalSysLockFromISR();
         uint32_t* frame_buffer = (uint32_t*)ibqGetEmptyBufferI(&pio_rx_queue);
         if (frame_buffer == NULL) {
             osalSysUnlockFromISR();
             return;
         }
-        *frame_buffer = pio_sm_get(pio, state_machine);
+        *frame_buffer = pioSmGetX(state_machine);
         ibqPostFullBufferI(&pio_rx_queue, sizeof(uint32_t));
         osalSysUnlockFromISR();
     }
 
-    if (irqs & (PIO_IRQ0_INTF_SM0_TXNFULL_BITS << state_machine)) {
-        pio_set_irq0_source_enabled(pio, pis_sm0_tx_fifo_not_full + state_machine, false);
+    if (ints & PIO_IRQ_TXNFULL(state_machine->smidx)) {
+        pioSmDisableInterruptX(state_machine, PIO_IRQ_TXNFULL(state_machine->smidx));
         osalSysLockFromISR();
         osalThreadResumeI(&tx_thread, MSG_OK);
         osalSysUnlockFromISR();
@@ -124,31 +109,52 @@ void pio_serve_interrupt(void) {
 
 void ps2_host_init(void) {
     ibqObjectInit(&pio_rx_queue, false, pio_rx_buffer, sizeof(uint32_t), BUFFER_SIZE, NULL, NULL);
-    uint pio_idx = pio_get_index(pio);
 
-    hal_lld_peripheral_unreset(pio_idx == 0 ? RESETS_ALLREG_PIO0 : RESETS_ALLREG_PIO1);
-
-    state_machine = pio_claim_unused_sm(pio, true);
-    if (state_machine < 0) {
+    // The allocation also releases the PIO block from reset and registers the
+    // interrupt handler.
+    state_machine = pioSmAlloc(pio_block, RP_PIO_SM_ID_ANY, CORTEX_MAX_KERNEL_PRIORITY, pio_serve_interrupt, NULL);
+    if (state_machine == NULL) {
         dprintln("ERROR: Failed to acquire state machine for PS/2!");
         ps2_error = PS2_ERR_NODATA;
         return;
     }
 
-    uint offset = pio_add_program(pio, &ps2_program);
+    int32_t offset = pioProgramLoad(pio_block, &ps2_program);
+    if (offset < 0) {
+        dprintln("ERROR: Failed to load PS/2 PIO program!");
+        ps2_error = PS2_ERR_NODATA;
+        pioSmFree(state_machine);
+        state_machine = NULL;
+        return;
+    }
 
-    pio_sm_config c = pio_get_default_sm_config();
-    sm_config_set_wrap(&c, offset + PS2_WRAP_TARGET, offset + PS2_WRAP);
+    // Steady-state pin mapping: SET on both pins, OUT and IN on the data pin.
+    // clang-format off
+    uint32_t pinctrl  = (2U << PIO_SM_PINCTRL_SET_COUNT_Pos) |
+                        ((uint32_t)PS2_FIRST_PIN << PIO_SM_PINCTRL_SET_BASE_Pos) |
+                        (1U << PIO_SM_PINCTRL_OUT_COUNT_Pos) |
+                        ((uint32_t)PS2_DATA_PIN << PIO_SM_PINCTRL_OUT_BASE_Pos) |
+                        ((uint32_t)PS2_DATA_PIN << PIO_SM_PINCTRL_IN_BASE_Pos);
+    uint32_t execctrl = PIO_SM_EXECCTRL_WRAP(offset + PS2_WRAP_TARGET, offset + PS2_WRAP) |
+                        ((uint32_t)PS2_CLOCK_PIN << PIO_SM_EXECCTRL_JMP_PIN_Pos);
+    // OUT shifts right with autopull at 10 bits, IN shifts right with
+    // autopush at 11 bits.
+    uint32_t shiftctrl = PIO_SM_SHIFTCTRL_OUT_SHIFTDIR |
+                         PIO_SM_SHIFTCTRL_AUTOPULL |
+                         (10U << PIO_SM_SHIFTCTRL_PULL_THRESH_Pos) |
+                         PIO_SM_SHIFTCTRL_IN_SHIFTDIR |
+                         PIO_SM_SHIFTCTRL_AUTOPUSH |
+                         (11U << PIO_SM_SHIFTCTRL_PUSH_THRESH_Pos);
+    // clang-format on
 
-    // Set pindirs to input (output enable is inverted below)
-    pio_sm_set_consecutive_pindirs(pio, state_machine, PS2_FIRST_PIN, 2, true);
-    sm_config_set_clkdiv(&c, (float)clock_get_hz(clk_sys) / (200.0f * KHZ));
-    sm_config_set_set_pins(&c, PS2_FIRST_PIN, 2);
-    sm_config_set_out_pins(&c, PS2_DATA_PIN, 1);
-    sm_config_set_out_shift(&c, true, true, 10);
-    sm_config_set_in_shift(&c, true, true, 11);
-    sm_config_set_jmp_pin(&c, PS2_CLOCK_PIN);
-    sm_config_set_in_pins(&c, PS2_DATA_PIN);
+    pioSmSetPinctrlX(state_machine, pinctrl);
+    // Set pindirs of both pins to 1 (output enable is inverted below, so this
+    // releases the open-drain lines).
+    pioSmExecX(state_machine, 0xE083U);
+
+    pioSmSetExecctrlX(state_machine, execctrl);
+    pioSmSetShiftctrlX(state_machine, shiftctrl);
+    pioSmSetFrequencyX(state_machine, 200000U);
 
     // clang-format off
     iomode_t pin_mode = PAL_RP_PAD_IE |
@@ -162,22 +168,19 @@ void ps2_host_init(void) {
                         // due to the pull-up resistor, while pindirs=0 pulls
                         // the line low.
                         PAL_RP_IOCTRL_OEOVER_DRVINVPERI |
-                        (pio_idx == 0 ? PAL_MODE_ALTERNATE_PIO0 : PAL_MODE_ALTERNATE_PIO1);
+                        (pio_block->pioidx == 0 ? PAL_MODE_ALTERNATE_PIO0 : PAL_MODE_ALTERNATE_PIO1);
     // clang-format on
 
     palSetLineMode(PS2_DATA_PIN, pin_mode);
     palSetLineMode(PS2_CLOCK_PIN, pin_mode);
 
-    pio_set_irq0_source_enabled(pio, pis_sm0_rx_fifo_not_empty + state_machine, true);
-    pio_sm_init(pio, state_machine, offset, &c);
+    pioSmEnableInterruptX(state_machine, PIO_IRQ_RXNEMPTY(state_machine->smidx));
 
-#if defined(PS2_PIO_USE_PIO1)
-    nvicEnableVector(RP_PIO1_IRQ_0_NUMBER, CORTEX_MAX_KERNEL_PRIORITY);
-#else
-    nvicEnableVector(RP_PIO0_IRQ_0_NUMBER, CORTEX_MAX_KERNEL_PRIORITY);
-#endif
-
-    pio_sm_set_enabled(pio, state_machine, true);
+    pioSmClearFifosX(state_machine);
+    pioSmRestartX(state_machine);
+    pioSmClkdivRestartX(state_machine);
+    pioSmSetPCX(state_machine, (uint32_t)offset);
+    pioSmEnableX(state_machine);
 }
 
 static int bit_parity(int x) {
@@ -192,15 +195,15 @@ uint8_t ps2_host_send(uint8_t data) {
         frame = frame | (1 << 8);
     }
 
-    pio_sm_put(pio, state_machine, frame);
+    pioSmPutX(state_machine, frame);
 
     msg_t msg = MSG_OK;
     osalSysLock();
-    while (pio_sm_is_tx_fifo_full(pio, state_machine)) {
-        pio_set_irq0_source_enabled(pio, pis_sm0_tx_fifo_not_full + state_machine, true);
+    while (pioSmIsTxFullX(state_machine)) {
+        pioSmEnableInterruptX(state_machine, PIO_IRQ_TXNFULL(state_machine->smidx));
         msg = osalThreadSuspendTimeoutS(&tx_thread, TIME_MS2I(100));
         if (msg < MSG_OK) {
-            pio_set_irq0_source_enabled(pio, pis_sm0_tx_fifo_not_full + state_machine, false);
+            pioSmDisableInterruptX(state_machine, PIO_IRQ_TXNFULL(state_machine->smidx));
             ps2_error = PS2_ERR_NODATA;
             osalSysUnlock();
             return 0;
