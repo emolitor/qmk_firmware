@@ -354,7 +354,7 @@
                     "properties": {
                         "driver": {
                             "type": "string",
-                            "enum": ["none", "custom", "embedded_flash", "legacy", "rp2040_flash", "spi_flash"]
+                            "enum": ["none", "custom", "embedded_flash", "legacy", "spi_flash"]
                         },
                         "backing_size": {"$ref": "./definitions.jsonschema#/unsigned_int"},
                         "logical_size": {"$ref": "./definitions.jsonschema#/unsigned_int"}

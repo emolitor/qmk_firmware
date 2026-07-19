@@ -104,10 +104,13 @@ The wear-leveling driver has a few possible _backing stores_ that may be used by
 
 Driver                                  | Description
 ----------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-`WEAR_LEVELING_DRIVER = embedded_flash` | This driver is used for emulating EEPROM by writing to embedded flash on the MCU.
+`WEAR_LEVELING_DRIVER = embedded_flash` | This driver is used for emulating EEPROM by writing to embedded flash on the MCU. On the Raspberry Pi RP family this writes to the same external flash the MCU executes code from, through the ChibiOS EFL driver.
 `WEAR_LEVELING_DRIVER = spi_flash`      | This driver is used to address external SPI NOR Flash peripherals.
-`WEAR_LEVELING_DRIVER = rp2040_flash`   | This driver is used to write to the same storage the RP2040 executes code from.
 `WEAR_LEVELING_DRIVER = legacy`         | This driver is the "legacy" emulated EEPROM provided in historical revisions of QMK. Currently used for STM32F0xx and STM32F4x1, but slated for deprecation and removal once `embedded_flash` support for those MCU families is complete.
+
+::: info
+The former `rp2040_flash` backend is superseded by `embedded_flash`, which uses the same flash region and on-flash format; selecting `rp2040_flash` remaps to `embedded_flash` with a notice.
+:::
 
 ::: warning
 All wear-leveling drivers require an amount of RAM equivalent to the selected logical EEPROM size. Increasing the size to 32kB of EEPROM requires 32kB of RAM, which a significant number of MCUs simply do not have.

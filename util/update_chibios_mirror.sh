@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# NOTE: The ChibiOS half of this mirroring flow is obsolete -- lib/chibios
+# now tracks https://github.com/chibios-upstream/chibios directly. Only the
+# ChibiOS-Contrib mirroring below remains relevant.
+
 ################################
 # Configuration
 

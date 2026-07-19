@@ -279,7 +279,7 @@ Configures the [EEPROM](drivers/eeprom) driver.
         * Default: `"vendor"`
     * `wear_leveling`
         * `driver` <Badge type="info">String</Badge>
-            * The driver to use. Must be one of `embedded_flash`, `legacy`, `rp2040_flash`, `spi_flash`, `custom`.
+            * The driver to use. Must be one of `embedded_flash`, `legacy`, `spi_flash`, `custom`.
         * `backing_size` <Badge type="info">Number</Badge>
             * Number of bytes used by the wear-leveling algorithm for its underlying storage, and needs to be a multiple of the logical size.
         * `logical_size` <Badge type="info">Number</Badge>
