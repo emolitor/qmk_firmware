@@ -128,33 +128,26 @@ void ps2_host_init(void) {
         return;
     }
 
+    rp_pio_sm_config_t config;
+    pioSmConfigDefaultX(&config);
+    pioSmConfigSetWrapX(&config, (uint32_t)offset + PS2_WRAP_TARGET, (uint32_t)offset + PS2_WRAP);
+
     // Steady-state pin mapping: SET on both pins, OUT and IN on the data pin.
-    // clang-format off
-    uint32_t pinctrl  = (2U << PIO_SM_PINCTRL_SET_COUNT_Pos) |
-                        ((uint32_t)PS2_FIRST_PIN << PIO_SM_PINCTRL_SET_BASE_Pos) |
-                        (1U << PIO_SM_PINCTRL_OUT_COUNT_Pos) |
-                        ((uint32_t)PS2_DATA_PIN << PIO_SM_PINCTRL_OUT_BASE_Pos) |
-                        ((uint32_t)PS2_DATA_PIN << PIO_SM_PINCTRL_IN_BASE_Pos);
-    uint32_t execctrl = PIO_SM_EXECCTRL_WRAP(offset + PS2_WRAP_TARGET, offset + PS2_WRAP) |
-                        ((uint32_t)PS2_CLOCK_PIN << PIO_SM_EXECCTRL_JMP_PIN_Pos);
+    pioSmConfigSetSetPinsX(&config, pioGpioToRel(pio_block, PS2_FIRST_PIN), 2U);
+    pioSmConfigSetOutPinsX(&config, pioGpioToRel(pio_block, PS2_DATA_PIN), 1U);
+    pioSmConfigSetInPinsX(&config, pioGpioToRel(pio_block, PS2_DATA_PIN));
+    pioSmConfigSetJmpPinX(&config, pioGpioToRel(pio_block, PS2_CLOCK_PIN));
+
     // OUT shifts right with autopull at 10 bits, IN shifts right with
     // autopush at 11 bits.
-    uint32_t shiftctrl = PIO_SM_SHIFTCTRL_OUT_SHIFTDIR |
-                         PIO_SM_SHIFTCTRL_AUTOPULL |
-                         (10U << PIO_SM_SHIFTCTRL_PULL_THRESH_Pos) |
-                         PIO_SM_SHIFTCTRL_IN_SHIFTDIR |
-                         PIO_SM_SHIFTCTRL_AUTOPUSH |
-                         (11U << PIO_SM_SHIFTCTRL_PUSH_THRESH_Pos);
-    // clang-format on
+    pioSmConfigSetOutShiftX(&config, true, true, 10U);
+    pioSmConfigSetInShiftX(&config, true, true, 11U);
+    pioSmConfigSetFrequencyX(&config, 200000U);
 
-    pioSmSetPinctrlX(state_machine, pinctrl);
+    pioSmInit(state_machine, (uint32_t)offset, &config);
     // Set pindirs of both pins to 1 (output enable is inverted below, so this
     // releases the open-drain lines).
-    pioSmExecX(state_machine, 0xE083U);
-
-    pioSmSetExecctrlX(state_machine, execctrl);
-    pioSmSetShiftctrlX(state_machine, shiftctrl);
-    pioSmSetFrequencyX(state_machine, 200000U);
+    pioSmSetConsecutivePindirsX(state_machine, PS2_FIRST_PIN, 2U, true);
 
     // clang-format off
     iomode_t pin_mode = PAL_RP_PAD_IE |
@@ -176,10 +169,6 @@ void ps2_host_init(void) {
 
     pioSmEnableInterruptX(state_machine, PIO_IRQ_RXNEMPTY(state_machine->smidx));
 
-    pioSmClearFifosX(state_machine);
-    pioSmRestartX(state_machine);
-    pioSmClkdivRestartX(state_machine);
-    pioSmSetPCX(state_machine, (uint32_t)offset);
     pioSmEnableX(state_machine);
 }
 

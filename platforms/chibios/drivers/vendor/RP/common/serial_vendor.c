@@ -128,7 +128,7 @@ static void pio_serve_interrupt(void* param, uint32_t ints) {
  * pin mapping afterwards.
  */
 static void pio_sm_exec_set(const rp_pio_sm_t* smp, pin_t pin, uint16_t instruction, uint32_t steady_pinctrl) {
-    pioSmSetPinctrlX(smp, (1U << PIO_SM_PINCTRL_SET_COUNT_Pos) | ((uint32_t)pin << PIO_SM_PINCTRL_SET_BASE_Pos));
+    pioSmSetPinctrlX(smp, (1U << PIO_SM_PINCTRL_SET_COUNT_Pos) | (pioGpioToRel(pio_block, pin) << PIO_SM_PINCTRL_SET_BASE_Pos));
     pioSmExecX(smp, instruction);
     pioSmSetPinctrlX(smp, steady_pinctrl);
 }
@@ -300,7 +300,7 @@ static inline bool receive_impl(uint8_t* destination, const size_t size, sysinte
                 break;
             }
             // The RX shift register pushes MSB-aligned bytes.
-            *destination++ = (uint8_t)(pio_block->pio->RXF[rx_sm->smidx] >> 24);
+            *destination++ = (uint8_t)(pioSmGetX(rx_sm) >> 24);
             read++;
         }
         osalSysUnlock();
@@ -337,15 +337,35 @@ static inline bool pio_tx_init(pin_t tx_pin) {
 
     active_tx_pin = tx_pin;
 
+    uint32_t rel = pioGpioToRel(pio_block, tx_pin);
+
+    rp_pio_sm_config_t config;
+    pioSmConfigDefaultX(&config);
+    pioSmConfigSetWrapX(&config, (uint32_t)offset + UART_TX_WRAP_TARGET, (uint32_t)offset + UART_TX_WRAP);
+
     // Steady-state pin mapping: both OUT and side-set drive the tx pin,
     // because sometimes we need to assert user data onto the pin (with OUT)
     // and sometimes assert constant values (start/stop bit, via side-set).
-    // clang-format off
-    tx_pinctrl = (1U << PIO_SM_PINCTRL_OUT_COUNT_Pos) |
-                 ((uint32_t)tx_pin << PIO_SM_PINCTRL_OUT_BASE_Pos) |
-                 (2U << PIO_SM_PINCTRL_SIDESET_COUNT_Pos) |
-                 ((uint32_t)tx_pin << PIO_SM_PINCTRL_SIDESET_BASE_Pos);
-    // clang-format on
+    pioSmConfigSetOutPinsX(&config, rel, 1U);
+    pioSmConfigSetSidesetPinsX(&config, rel);
+
+#if defined(SERIAL_USART_FULL_DUPLEX)
+    // Optional side-set that asserts logic levels.
+    pioSmConfigSetSidesetX(&config, 2U, true, false);
+#else
+    // Optional side-set that changes pin directions instead of logic levels.
+    pioSmConfigSetSidesetX(&config, 2U, true, true);
+#endif
+
+    // OUT shifts to right, no autopull, TX FIFO joined for full depth.
+    pioSmConfigSetOutShiftX(&config, true, false, 32U);
+    pioSmConfigSetFifoJoinX(&config, RP_PIO_FIFO_JOIN_TX);
+    // SM transmits 1 bit per 8 execution cycles.
+    pioSmConfigSetFrequencyX(&config, 8U * SERIAL_USART_SPEED);
+
+    // Steady-state PINCTRL, restored by pio_sm_exec_set() after temporary
+    // SET pin mappings.
+    tx_pinctrl = config.pinctrl;
 
 #if defined(SERIAL_USART_FULL_DUPLEX)
     // clang-format off
@@ -356,29 +376,15 @@ static inline bool pio_tx_init(pin_t tx_pin) {
     // clang-format on
     pio_sm_exec_set(tx_sm, tx_pin, PIO_INSTR_SET_PINS_HIGH, tx_pinctrl);
     pio_sm_exec_set(tx_sm, tx_pin, PIO_INSTR_SET_PINDIRS_OUT, tx_pinctrl);
-    // Optional side-set that asserts logic levels.
-    uint32_t execctrl = PIO_SM_EXECCTRL_WRAP(offset + UART_TX_WRAP_TARGET, offset + UART_TX_WRAP) | PIO_SM_EXECCTRL_SIDE_EN;
 #else
     iomode_t tx_pin_mode = TX_PIN_HALF_DUPLEX_MODE(PAL_RP_PAD_DRIVE12);
     pio_sm_exec_set(tx_sm, tx_pin, PIO_INSTR_SET_PINS_LOW, tx_pinctrl);
     pio_sm_exec_set(tx_sm, tx_pin, PIO_INSTR_SET_PINDIRS_OUT, tx_pinctrl);
-    // Optional side-set that changes pin directions instead of logic levels.
-    uint32_t execctrl = PIO_SM_EXECCTRL_WRAP(offset + UART_TX_WRAP_TARGET, offset + UART_TX_WRAP) | PIO_SM_EXECCTRL_SIDE_EN | PIO_SM_EXECCTRL_SIDE_PINDIR;
 #endif
 
     palSetLineMode(tx_pin, tx_pin_mode);
 
-    pioSmSetExecctrlX(tx_sm, execctrl);
-    // OUT shifts to right, no autopull, TX FIFO joined for full depth.
-    pioSmSetShiftctrlX(tx_sm, PIO_SM_SHIFTCTRL_OUT_SHIFTDIR | PIO_SM_SHIFTCTRL_FJOIN_TX);
-    pioSmSetPinctrlX(tx_sm, tx_pinctrl);
-    // SM transmits 1 bit per 8 execution cycles.
-    pioSmSetFrequencyX(tx_sm, 8U * SERIAL_USART_SPEED);
-
-    pioSmClearFifosX(tx_sm);
-    pioSmRestartX(tx_sm);
-    pioSmClkdivRestartX(tx_sm);
-    pioSmSetPCX(tx_sm, (uint32_t)offset);
+    pioSmInit(tx_sm, (uint32_t)offset, &config);
     pioSmEnableX(tx_sm);
     return true;
 }
@@ -400,23 +406,20 @@ static inline bool pio_rx_init(pin_t rx_pin) {
     palSetLineMode(rx_pin, rx_pin_mode);
 #endif
 
-    // clang-format off
-    uint32_t rx_pinctrl = ((uint32_t)rx_pin << PIO_SM_PINCTRL_IN_BASE_Pos);
-    uint32_t execctrl   = PIO_SM_EXECCTRL_WRAP(offset + UART_RX_WRAP_TARGET, offset + UART_RX_WRAP) |
-                          ((uint32_t)rx_pin << PIO_SM_EXECCTRL_JMP_PIN_Pos);
-    // clang-format on
+    uint32_t rel = pioGpioToRel(pio_block, rx_pin);
 
-    pioSmSetExecctrlX(rx_sm, execctrl);
+    rp_pio_sm_config_t config;
+    pioSmConfigDefaultX(&config);
+    pioSmConfigSetWrapX(&config, (uint32_t)offset + UART_RX_WRAP_TARGET, (uint32_t)offset + UART_RX_WRAP);
+    pioSmConfigSetInPinsX(&config, rel);
+    pioSmConfigSetJmpPinX(&config, rel);
     // IN shifts to right, autopush disabled, RX FIFO joined for full depth.
-    pioSmSetShiftctrlX(rx_sm, PIO_SM_SHIFTCTRL_IN_SHIFTDIR | PIO_SM_SHIFTCTRL_FJOIN_RX);
-    pioSmSetPinctrlX(rx_sm, rx_pinctrl);
+    pioSmConfigSetInShiftX(&config, true, false, 32U);
+    pioSmConfigSetFifoJoinX(&config, RP_PIO_FIFO_JOIN_RX);
     // SM samples 1 bit per 8 execution cycles.
-    pioSmSetFrequencyX(rx_sm, 8U * SERIAL_USART_SPEED);
+    pioSmConfigSetFrequencyX(&config, 8U * SERIAL_USART_SPEED);
 
-    pioSmClearFifosX(rx_sm);
-    pioSmRestartX(rx_sm);
-    pioSmClkdivRestartX(rx_sm);
-    pioSmSetPCX(rx_sm, (uint32_t)offset);
+    pioSmInit(rx_sm, (uint32_t)offset, &config);
     pioSmEnableX(rx_sm);
     return true;
 }

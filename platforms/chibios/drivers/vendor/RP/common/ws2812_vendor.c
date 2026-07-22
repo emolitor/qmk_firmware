@@ -156,14 +156,10 @@ __always_inline static uint32_t rgbw8888_to_u32(uint8_t red, uint8_t green, uint
 #endif
 }
 
-static inline uint32_t pio_tx_fifo_level(void) {
-    return (pio_block->pio->FLEVEL >> (8U * state_machine->smidx)) & 0xFU;
-}
-
 static void ws2812_dma_callback(void *p, uint32_t ct) {
     // We assume that there is at least one frame left in the OSR even if the TX
     // FIFO is already empty.
-    uint32_t time_to_completion = (pio_tx_fifo_level() + 1U) * MAX(WS2812_T1H + WS2812_T1L, WS2812_T0H + WS2812_T0L);
+    uint32_t time_to_completion = (pioSmTxFifoLevelX(state_machine) + 1U) * MAX(WS2812_T1H + WS2812_T1L, WS2812_T0H + WS2812_T0L);
 
 #if defined(WS2812_RGBW)
     time_to_completion *= 32;
@@ -209,16 +205,13 @@ void ws2812_init(void) {
         return;
     }
 
-    // Set the data pin direction to output via a 'set pindirs, 1' instruction.
-    pioSmSetPinctrlX(state_machine, (1U << PIO_SM_PINCTRL_SET_COUNT_Pos) | ((uint32_t)WS2812_DI_PIN << PIO_SM_PINCTRL_SET_BASE_Pos));
-    pioSmExecX(state_machine, 0xE081U);
+    uint32_t rel = pioGpioToRel(pio_block, WS2812_DI_PIN);
+
+    rp_pio_sm_config_t config;
+    pioSmConfigDefaultX(&config);
+    pioSmConfigSetWrapX(&config, (uint32_t)offset + WS2812_WRAP_TARGET, (uint32_t)offset + WS2812_WRAP);
 
     // One side-set bit on the data pin, no SET/OUT pin usage by the program.
-    pioSmSetPinctrlX(state_machine, (1U << PIO_SM_PINCTRL_SIDESET_COUNT_Pos) | ((uint32_t)WS2812_DI_PIN << PIO_SM_PINCTRL_SIDESET_BASE_Pos));
-
-    // clang-format off
-    uint32_t execctrl = PIO_SM_EXECCTRL_WRAP(offset + WS2812_WRAP_TARGET,
-                                             offset + WS2812_WRAP);
 #if defined(WS2812_EXTERNAL_PULLUP)
     /* Instruct side-set to change the pin-directions instead of outputting
      * a logic level. We generate our levels the following way:
@@ -228,40 +221,36 @@ void ws2812_init(void) {
      *
      * 0: Set RGB data pin to low impedance output and drive the pin low.
      */
-    execctrl |= PIO_SM_EXECCTRL_SIDE_PINDIR;
+    pioSmConfigSetSidesetX(&config, 1U, false, true);
+#else
+    pioSmConfigSetSidesetX(&config, 1U, false, false);
 #endif
-    pioSmSetExecctrlX(state_machine, execctrl);
+    pioSmConfigSetSidesetPinsX(&config, rel);
 
     // Shift out left (MSB first) with autopull, TX FIFO only.
 #if defined(WS2812_RGBW)
-    pioSmSetShiftctrlX(state_machine, PIO_SM_SHIFTCTRL_AUTOPULL |
-                                      PIO_SM_SHIFTCTRL_FJOIN_TX |
-                                      ((32U & 0x1FU) << PIO_SM_SHIFTCTRL_PULL_THRESH_Pos));
+    pioSmConfigSetOutShiftX(&config, false, true, 32U);
 #else
-    pioSmSetShiftctrlX(state_machine, PIO_SM_SHIFTCTRL_AUTOPULL |
-                                      PIO_SM_SHIFTCTRL_FJOIN_TX |
-                                      (24U << PIO_SM_SHIFTCTRL_PULL_THRESH_Pos));
+    pioSmConfigSetOutShiftX(&config, false, true, 24U);
 #endif
-    // clang-format on
+    pioSmConfigSetFifoJoinX(&config, RP_PIO_FIFO_JOIN_TX);
 
     // Every instruction takes 50ns to execute with a clock speed of 20 MHz,
     // giving the WS2812 PIO driver its time resolution
-    pioSmSetFrequencyX(state_machine, 20000000U);
+    pioSmConfigSetFrequencyX(&config, 20000000U);
 
-    pioSmClearFifosX(state_machine);
-    pioSmRestartX(state_machine);
-    pioSmClkdivRestartX(state_machine);
-    pioSmSetPCX(state_machine, (uint32_t)offset);
+    pioSmInit(state_machine, (uint32_t)offset, &config);
+    pioSmSetConsecutivePindirsX(state_machine, WS2812_DI_PIN, 1U, true);
     pioSmEnableX(state_machine);
 
     dma_channel = dmaChannelAlloc(RP_DMA_CHANNEL_ID_ANY, RP_DMA_PRIORITY_WS2812, (rp_dmaisr_t)ws2812_dma_callback, NULL);
     dmaChannelEnableInterruptX(dma_channel);
-    dmaChannelSetDestinationX(dma_channel, (uint32_t)&pio_block->pio->TXF[state_machine->smidx]);
+    dmaChannelSetDestinationX(dma_channel, (uint32_t)pioSmTxFifoAddrX(state_machine));
 
     // clang-format off
     RP_DMA_MODE_WS2812 = DMA_CTRL_TRIG_INCR_READ |
                          DMA_CTRL_TRIG_DATA_SIZE_WORD |
-                         DMA_CTRL_TRIG_TREQ_SEL(pio_block->pioidx * 8U + state_machine->smidx) |
+                         DMA_CTRL_TRIG_TREQ_SEL(pioSmTxDreqX(state_machine)) |
                          (RP_DMA_PRIORITY_WS2812 > 0 ? DMA_CTRL_TRIG_HIGH_PRIORITY : 0U);
     // clang-format on
 }
