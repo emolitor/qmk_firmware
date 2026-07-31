@@ -11,9 +11,17 @@
 #define FLASH_OPTR_CLR_MASK (FLASH_OPTR_nBOOT_SEL)
 #define FLASH_OPTR_SET_MASK (FLASH_OPTR_NRST_MODE_Msk)
 
-static void wait_for_flash(void) {
-    while (READ_BIT(FLASH->SR, FLASH_SR_BSY1)) {
+// Roughly 100ms at the 12MHz post-reset MSI clock, far beyond the worst
+// case option-byte program time.
+#define FLASH_WAIT_TIMEOUT 1200000U
+
+static bool wait_for_flash(void) {
+    for (uint32_t i = FLASH_WAIT_TIMEOUT; i > 0U; i--) {
+        if (!READ_BIT(FLASH->SR, FLASH_SR_BSY1)) {
+            return true;
+        }
     }
+    return false;
 }
 
 void __attribute__((constructor)) enable_boot0_and_nrst_pin(void) {
@@ -36,30 +44,45 @@ void __attribute__((constructor)) enable_boot0_and_nrst_pin(void) {
     // 2. legacy nRST pin handling is enabled.
     //   OPTR[28:27] = 0b11
     // To match the default behavior found in older (F0/F1/F3/F4) STM32 devices.
+    // On any timeout skip the rewrite and continue booting with the current
+    // option bytes rather than hanging before USB comes up; the next reset
+    // retries.
     if (READ_BIT(optr, FLASH_OPTR_CLR_MASK) || (READ_BIT(optr, FLASH_OPTR_SET_MASK) != FLASH_OPTR_SET_MASK)) {
         if (READ_BIT(FLASH->CR, FLASH_CR_LOCK)) {
             WRITE_REG(FLASH->KEYR, FLASH_KEY1);
             WRITE_REG(FLASH->KEYR, FLASH_KEY2);
-            while (READ_BIT(FLASH->CR, FLASH_CR_LOCK)) {
+            if (READ_BIT(FLASH->CR, FLASH_CR_LOCK)) {
+                return;
             }
-            wait_for_flash();
+            if (!wait_for_flash()) {
+                return;
+            }
         }
         if (READ_BIT(FLASH->CR, FLASH_CR_OPTLOCK)) {
             WRITE_REG(FLASH->OPTKEYR, FLASH_OPTKEY1);
             WRITE_REG(FLASH->OPTKEYR, FLASH_OPTKEY2);
-            while (READ_BIT(FLASH->CR, FLASH_CR_OPTLOCK)) {
+            if (READ_BIT(FLASH->CR, FLASH_CR_OPTLOCK)) {
+                return;
             }
-            wait_for_flash();
+            if (!wait_for_flash()) {
+                return;
+            }
         }
 
         MODIFY_REG(FLASH->OPTR, FLASH_OPTR_CLR_MASK, FLASH_OPTR_SET_MASK);
-        wait_for_flash();
+        if (!wait_for_flash()) {
+            return;
+        }
 
         SET_BIT(FLASH->CR, FLASH_CR_OPTSTRT);
-        wait_for_flash();
+        if (!wait_for_flash()) {
+            return;
+        }
 
         CLEAR_BIT(FLASH->CR, FLASH_CR_OPTSTRT);
-        wait_for_flash();
+        if (!wait_for_flash()) {
+            return;
+        }
 
         // Launch the option byte (re)loading, which resets the device. This
         // should not return.
