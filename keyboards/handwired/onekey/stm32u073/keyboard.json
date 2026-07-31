@@ -1,0 +1,9 @@
+{
+    "keyboard_name": "Onekey STM32U073",
+    "processor": "STM32U073",
+    "bootloader": "stm32-dfu",
+    "matrix_pins": {
+        "cols": ["A0"],
+        "rows": ["A1"]
+    }
+}
