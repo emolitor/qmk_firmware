@@ -114,7 +114,7 @@
 #        define USE_I2CV1
 #    endif
 
-#    if defined(STM32G0XX) || defined(STM32G4XX) || defined(STM32L5XX) || defined(STM32H7XX)
+#    if defined(STM32G0XX) || defined(STM32G4XX) || defined(STM32L5XX) || defined(STM32H7XX) || defined(STM32U0XX)
 #        define USE_USARTV3
 #    endif
 
