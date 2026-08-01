@@ -45,6 +45,8 @@
 #                define BACKING_STORE_WRITE_SIZE 8 // from hal_efl_lld.c
 #            elif defined(QMK_MCU_SERIES_STM32G4XX)
 #                define BACKING_STORE_WRITE_SIZE 8 // from hal_efl_lld.c
+#            elif defined(QMK_MCU_SERIES_STM32U0XX)
+#                define BACKING_STORE_WRITE_SIZE 8 // from hal_efl_lld.c
 #            else
 #                error "ChibiOS hasn't defined STM32_FLASH_LINE_SIZE, and could not automatically determine BACKING_STORE_WRITE_SIZE" // normally defined in stm32_registry.h, should be set by STM32_FLASH_LINE_SIZE
 #            endif
