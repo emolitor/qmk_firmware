@@ -59,6 +59,24 @@ battery through the charger's discharge FET, bypassing charge control.
 Until the respin: use one cable at a time, and switch SW1 off whenever
 J2 is powered.
 
+### 4. Inter-MCU UART is not crossed
+
+The STM32-CH592 UART is wired TX-to-TX / RX-to-RX (U1 PA2/USART2_TX to
+U2 PA8/RXD1's partner pin and vice versa are swapped). The CH592
+cannot swap its UART pins; B01 firmware must set the STM32 USART2
+CR2.SWAP bit (PA2 becomes RX, PA3 becomes TX) or the link is dead,
+with possible push-pull contention if both transmitters are enabled
+naively. Any stock serial configuration fails silently.
+
+### 5. Battery charging is disabled (ILIM floating)
+
+The BQ24075 ILIM pin (U4 pin 12) is deliberately no-connected, but the
+datasheet requires a 1.1 k-8 k resistor to VSS in every mode: "Leaving
+ILIM unconnected disables all charging." The power path works, so the
+board runs normally on USB and discharges the battery when unplugged -
+it just never charges, and the CHG LED never lights. B01 rework: bodge
+a 1.2 k resistor from U4 pad 12 to GND.
+
 ## Rev B02 respin checklist
 
 1. Attach the ROW4 global label to PA0 (U1 pin 10).
@@ -68,6 +86,44 @@ J2 is powered.
    Schottky diode (SS34, LCSC C8678, JLCPCB basic part): resolves the
    contention and battery back-feed by construction; the diode drop
    only affects charging while programming the CH592.
+4. Fit R_ILIM (1.1 k-1.6 k, 0402) from BQ24075 ILIM (pin 12) to GND -
+   without it charging is entirely disabled (erratum 5).
+5. Re-strap the input current limit: EN2 = high, EN1 = low, so the
+   limit is set by R_ILIM (~1.4 A) instead of USB500; the current
+   EN1-to-VSYS bootstrap caps input at 500 mA, which the programmed
+   ~494 mA charge current plus the LED load cannot share (the battery
+   discharges while plugged in with the backlight up). If 500 mA hosts
+   must be honored, add 0-ohm strap options or route EN1/EN2 to spare
+   U1 GPIOs for firmware control.
+6. Restore charge safety backstops: unground TMR (float for default
+   timers or fit 18 k-72 k), and consider a real NTC contact on the
+   battery harness instead of the fixed 10 k on TS.
+7. Take the battery current path out of SW1 (50 mA-rated slide switch
+   currently carries ~0.5 A charge and full discharge current): wire
+   J1 pin 1 directly to BAT and repurpose SW1 onto BQ24075 SYSOFF
+   (pin 15, currently hard-grounded) as a signal-level power switch.
+8. Add battery voltage sensing: gated high-impedance divider (e.g.
+   1 M/1 M + 100 nF behind a P-FET) from BATTERY to U1 PB11, so
+   firmware can report battery level over BLE and warn on low charge.
+9. Route charger status to the MCU: PGOOD (U4 pin 7) to U1 PB12 and
+   CHG (U4 pin 9 net) to U1 PB13 via ~100 k pull-ups, giving firmware
+   USB-present and charging/charged detection.
+10. Replace the XC6206P332 LDO with an HT7833 (3.3 V, 500 mA, 4-7 uA
+    quiescent, roughly half the dropout, similar cost; SOT-89 or
+    SOT-23-5 footprint change). Keeps the standby budget while buying
+    ~150 mV of low-battery headroom.
+11. Grow PVCC bulk near U3 (add 22-47 uF) for 75-LED scan transients.
+12. Cross the inter-MCU UART (erratum 4) and rename the nets
+    directionally (e.g. STM_TX_CH_RX) so the roles are unambiguous.
+13. Add a minimal testpoint set: VSYS, BATTERY, +3V3, +5V, ROW4, both
+    UART lines, CHWAKE, SDB.
+14. Tie the J2 mounting pads and the SW1 shield to GND (J1 already
+    is); assign or remove the four floating vias.
+15. Confirm the gasket-mount/no-mounting-holes decision against the
+    case CAD before tooling.
+
+Spare pin allocation with the above: PA0 = ROW4, PB11 = battery sense,
+PB12 = PGOOD, PB13 = CHG, PB14/PF0 = testpoints.
 
 ## Notes
 
