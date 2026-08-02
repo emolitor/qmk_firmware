@@ -23,11 +23,51 @@ holding the top-left key (bootmagic) while plugging in.
 
 ## Hardware errata (rev B01)
 
-The ROW4 net (bottom row, 9 keys) is not connected to the MCU in the rev
-B01 schematic: the ROW4 global label was never attached to a U1 pin, and
-PA0 (pin 10) is left unconnected. The firmware assigns ROW4 to A0, which
-requires a bodge wire from U1 pin 10 to the ROW4 net (any of the D61-D69
-cathodes) until the PCB is respun with the ROW4 label on PA0.
+### 1. ROW4 is not connected to the MCU
+
+The ROW4 net (bottom row, 9 keys) is floating: the ROW4 global label was
+never attached to a U1 pin and PA0 (pin 10) is left unconnected. The
+firmware assigns ROW4 to A0, which requires a bodge wire from U1 pin 10
+to the ROW4 net until the respin. The nearest ROW4 access point is the
+D64 cathode pad in the spacebar area, about 26 mm from PA0.
+
+### 2. RGB LED matrix polarity is inverted
+
+The MHT151RGBCT is a common anode RGB LED (pins: 1 = common anode,
+2/3/4 = B/G/R cathodes), but the board wires the common anodes to the
+IS31FL3741A CS pins and the R/G/B cathodes to the SW pins. Per the
+IS31FL3741A datasheet, CS1-CS39 are current *sinks* and SW1-SW9 are
+high-side *sources*, so every LED is reverse biased on every scan cycle
+and cannot light. No firmware workaround exists. Fix options:
+
+* Populate a pin-compatible **common cathode** RGB LED in the same
+  footprint; the existing routing then becomes a valid IS31FL3741A
+  topology and the firmware's LED table works unchanged, or
+* Rework the matrix for common anode parts (anode buses on SW rows,
+  per-colour cathodes on CS columns) and regenerate the LED table.
+
+The I2C interface, driver configuration, SDB control and the extracted
+75-LED wiring map were all validated against the rev B01 board; the
+firmware side is ready as soon as the LEDs can conduct.
+
+### 3. J2 feeds VSYS directly
+
+J2 pin 1 lands on the VSYS rail. Powering the board through J2 while
+the main USB is connected puts two supplies in contention on VSYS, and
+with a battery attached (SW1 on) an external 5 V on VSYS back-feeds the
+battery through the charger's discharge FET, bypassing charge control.
+Until the respin: use one cable at a time, and switch SW1 off whenever
+J2 is powered.
+
+## Rev B02 respin checklist
+
+1. Attach the ROW4 global label to PA0 (U1 pin 10).
+2. Swap LED1-LED75 to a pin-compatible common cathode RGB LED (or
+   rework the LED matrix orientation for common anode parts).
+3. Move J2 pin 1 from VSYS to the BQ24075 input (+5V net) through a
+   Schottky diode (SS34, LCSC C8678, JLCPCB basic part): resolves the
+   contention and battery back-feed by construction; the diode drop
+   only affects charging while programming the CH592.
 
 ## Notes
 
