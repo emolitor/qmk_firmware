@@ -815,6 +815,12 @@ ifneq ($(findstring STM32U073, $(MCU)),)
 
   # Bootloader address for STM32 DFU
   STM32_BOOTLOADER_ADDRESS ?= 0x1FFF0000
+
+  # The STM32U073 ROM bootloader disconnects before replying to the final
+  # GET_STATUS for the DfuSe leave command, causing dfu-util to report a
+  # failed download after the image was programmed successfully. Leave the
+  # device in DFU mode and require a manual reset after flashing instead.
+  DFU_ARGS ?= -d 0483:DF11 -a 0 -s 0x08000000
 endif
 
 ifneq ($(findstring WB32F3G71, $(MCU)),)
