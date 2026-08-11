@@ -50,6 +50,21 @@ STATIC_ASSERT(SYSTEM_CONTROL_USAGE_MINIMUM <= SYSTEM_CONTROL_USAGE_MAXIMUM, "SYS
 #endif
 
 /////////////////////
+// OpenBoot bridge Usage page and ID configuration
+//
+// Deliberately distinct from RAW_USAGE_PAGE so a host tool scanning for the
+// tunnel cannot match a VIA keyboard, and distinct from the OpenBoot
+// bootloader's own 0xFF00/0x01 so it cannot match a real bootloader either.
+
+#ifndef OPENBOOT_USAGE_PAGE
+#    define OPENBOOT_USAGE_PAGE 0xFF61
+#endif
+
+#ifndef OPENBOOT_USAGE_ID
+#    define OPENBOOT_USAGE_ID 0x62
+#endif
+
+/////////////////////
 // Hires Scroll Defaults
 
 #ifdef POINTING_DEVICE_HIRES_SCROLL_ENABLE

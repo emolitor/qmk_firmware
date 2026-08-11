@@ -5,6 +5,6 @@ ifeq ($(strip $(OPENCONTROLLER_ENABLE)), yes)
     BLUETOOTH_ENABLE := yes
     BLUETOOTH_DRIVER := custom
     UART_DRIVER_REQUIRED := yes
-    OPT_DEFS += -DOPENCONTROLLER_ENABLE
-    SRC += opencontroller.c opencontroller_protocol.c
+    OPT_DEFS += -DOPENCONTROLLER_ENABLE -DOPENBOOT_BRIDGE_ENABLE
+    SRC += opencontroller.c opencontroller_protocol.c openboot_bridge.c
 endif

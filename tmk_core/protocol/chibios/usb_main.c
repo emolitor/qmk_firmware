@@ -529,6 +529,24 @@ void raw_hid_task(void) {
 
 #endif
 
+#ifdef OPENBOOT_BRIDGE_ENABLE
+bool openboot_usb_send(const uint8_t *report) {
+    /* Unlike a keyboard report, these reports carry a byte stream, and
+     * usb_endpoint_in_send() resets and discards the whole output queue when it
+     * cannot fit one - which would silently drop bytes out of the middle of a
+     * frame. The tunnel's protocol is strict ping-pong, so refusing to queue a
+     * second report costs nothing and the caller simply offers it again. */
+    if (!usb_endpoint_in_is_inactive(&usb_endpoints_in[USB_ENDPOINT_IN_OPENBOOT])) {
+        return false;
+    }
+    return send_report(USB_ENDPOINT_IN_OPENBOOT, (void *)report, OPENBOOT_EPSIZE);
+}
+
+bool openboot_usb_receive(uint8_t *report) {
+    return receive_report(USB_ENDPOINT_OUT_OPENBOOT, report, OPENBOOT_EPSIZE);
+}
+#endif
+
 #ifdef MIDI_ENABLE
 
 void send_midi_packet(MIDI_EventPacket_t *event) {

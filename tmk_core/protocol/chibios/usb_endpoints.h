@@ -63,6 +63,14 @@
 #    define CDC_OUT_CAPACITY USB_DEFAULT_BUFFER_CAPACITY
 #endif
 
+#if !defined(OPENBOOT_IN_CAPACITY)
+#    define OPENBOOT_IN_CAPACITY USB_DEFAULT_BUFFER_CAPACITY
+#endif
+
+#if !defined(OPENBOOT_OUT_CAPACITY)
+#    define OPENBOOT_OUT_CAPACITY USB_DEFAULT_BUFFER_CAPACITY
+#endif
+
 #define CDC_SIGNALING_DUMMY_CAPACITY 1
 
 typedef enum {
@@ -106,6 +114,10 @@ typedef enum {
     USB_ENDPOINT_IN_CDC_DATA,
     USB_ENDPOINT_IN_CDC_SIGNALING,
 #endif
+
+#if defined(OPENBOOT_BRIDGE_ENABLE)
+    USB_ENDPOINT_IN_OPENBOOT,
+#endif
     USB_ENDPOINT_IN_COUNT,
 /* All non shared endpoints have to be consequtive numbers starting from 0, so
  * that they can be used as array indices. The shared endpoints all point to
@@ -141,6 +153,10 @@ typedef enum {
 #endif
 #if defined(VIRTSER_ENABLE)
     USB_ENDPOINT_OUT_CDC_DATA,
+#endif
+
+#if defined(OPENBOOT_BRIDGE_ENABLE)
+    USB_ENDPOINT_OUT_OPENBOOT,
 #endif
     USB_ENDPOINT_OUT_COUNT,
 } usb_endpoint_out_lut_t;

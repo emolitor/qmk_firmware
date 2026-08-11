@@ -15,6 +15,11 @@
 #include "uart.h"
 #include "usb_util.h"
 
+#ifdef OPENBOOT_BRIDGE_ENABLE
+#    include "openboot_bridge.h"
+#    include "openboot_hid.h"
+#endif
+
 #define OPENCONTROLLER_BAUD 115200
 #define OPENCONTROLLER_RX_BUDGET 32
 #define OPENCONTROLLER_RESELECT_DELAY_MS 1000
@@ -23,6 +28,18 @@
 #define OC_COMMAND_SELECT_2G4 0x30
 #define OC_COMMAND_PAIR 0x51
 #define OC_COMMAND_UNPAIR 0x52
+/* Acknowledged, then the module reboots into the OpenBoot bootloader. */
+#define OC_COMMAND_OTA 0x81
+
+/*
+ * Ceiling on any single drain of the UART, in bytes. A CH592 held in reset or
+ * unpowered leaves its TX line low, which the USART reports as an unbroken run
+ * of framing errors - so an unbounded "drain until empty" loop never finds an
+ * empty queue, spins the main loop forever, and takes USB down with it. One
+ * full serial queue per pass still empties the link an order of magnitude
+ * faster than 115200 can fill it.
+ */
+#define OPENBOOT_BRIDGE_DRAIN_LIMIT 256
 
 typedef enum {
     OC_TARGET_UNKNOWN,
@@ -274,7 +291,159 @@ static void service_pending_operation(void) {
     operation_retry_deferred = false;
 }
 
+#ifdef OPENBOOT_BRIDGE_ENABLE
+
+static bool             bridge_busy;
+static bool             bridge_ota_inflight;
+static connection_host_t bridge_saved_host;
+
+/* True from the moment ENTER is accepted until the link has been handed back.
+ * The error state is deliberately excluded: the bridge owns nothing there, so
+ * the keyboard's transport keycodes must keep working. */
+static bool bridge_is_active(void) {
+    obb_state_t state = obb_get_state();
+
+    return bridge_busy || (state != OBB_STATE_IDLE && state != OBB_STATE_ERROR);
+}
+
+static bool bridge_host_try_send(const uint8_t *data, uint8_t length, void *context) {
+    (void)length;
+    (void)context;
+
+    return openboot_usb_send(data);
+}
+
+static void bridge_seize(void) {
+    bridge_busy       = true;
+    bridge_saved_host = connection_get_host_raw();
+
+    /* While the module is off air QMK would route every report to the wireless
+     * driver, leaving the user with a dead keyboard for the whole update. */
+    connection_set_host_noeeprom(CONNECTION_HOST_USB);
+
+#ifdef RGB_MATRIX_ENABLE
+    /* Not cosmetic: a matrix flush blocks the main loop on I2C for long enough
+     * to overflow the serial input queue mid-transfer. */
+    rgb_matrix_disable_noeeprom();
+#endif
+}
+
+static void bridge_release(void) {
+    uint16_t drained = OPENBOOT_BRIDGE_DRAIN_LIMIT;
+
+    while (drained-- != 0 && uart_available()) {
+        (void)uart_read();
+    }
+
+    /* This is the state bluetooth_init() leaves behind, minus uart_init(), so
+     * the existing sync_target() path does the reconnect on the next call. */
+    ocp_init();
+    selected_target       = OC_TARGET_UNKNOWN;
+    reselect_deferred     = false;
+    reselect_target       = OC_TARGET_UNKNOWN;
+    connection_generation = ocp_get_connection_generation();
+    reset_pending_operation();
+
+    connection_set_host_noeeprom(bridge_saved_host);
+
+#ifdef RGB_MATRIX_ENABLE
+    rgb_matrix_enable_noeeprom();
+#endif
+
+    bridge_ota_inflight = false;
+    bridge_busy         = false;
+}
+
+/* Returns true while the bridge, and not the OpenController protocol, owns the
+ * UART. Keeping this inside bluetooth_task() is what makes "exactly one UART
+ * consumer per iteration" a property of the control flow. */
+static bool openboot_bridge_task(uint32_t now_ms) {
+    uint8_t report[OBB_REPORT_SIZE];
+    uint8_t chunk[OBB_MAX_DATA];
+    uint8_t count;
+
+    if (!usb_connected_state()) {
+        obb_on_usb_inactive(now_ms);
+    }
+
+    while (obb_can_accept_host_report() && openboot_usb_receive(report)) {
+        obb_on_host_report(report, (uint8_t)sizeof(report), now_ms);
+    }
+
+    obb_set_ocp_state(ocp_is_idle(), (uint8_t)ocp_get_link_state());
+
+    if (obb_take_ota_request()) {
+        if (ocp_queue_control(OC_COMMAND_OTA)) {
+            bridge_ota_inflight = true;
+        } else {
+            obb_on_ota_failed(now_ms);
+        }
+    }
+
+    /* The queued command is last in the FIFO, so the queue draining is the
+     * acknowledgement. A failure arrives instead through ocp_take_tx_failure(). */
+    if (bridge_ota_inflight && !ocp_actions_pending()) {
+        bridge_ota_inflight = false;
+        obb_on_ota_acked(now_ms);
+    }
+
+    if (obb_owns_uart()) {
+        /* Bounded for the same reason as bridge_release(): while settling, the
+         * bridge accepts bytes unconditionally in order to discard them, so a
+         * line stuck low would keep this loop fed indefinitely. */
+        uint16_t budget = OPENBOOT_BRIDGE_DRAIN_LIMIT;
+
+        while (budget != 0 && obb_can_accept_uart_bytes() && uart_available()) {
+            count = 0;
+            while (count < (uint8_t)sizeof(chunk) && budget != 0 && uart_available()) {
+                chunk[count++] = uart_read();
+                budget--;
+            }
+            obb_on_uart_bytes(chunk, count, now_ms);
+        }
+    }
+
+    obb_service(now_ms, opencontroller_uart_try_send, bridge_host_try_send, NULL);
+
+    if (obb_take_seize_request()) {
+        bridge_seize();
+    }
+    if (obb_take_release_request()) {
+        bridge_release();
+    }
+
+    return obb_owns_uart();
+}
+
+static bool bridge_take_tx_failure(uint32_t now_ms) {
+    if (!bridge_ota_inflight) {
+        return false;
+    }
+
+    bridge_ota_inflight = false;
+    obb_on_ota_failed(now_ms);
+    return true;
+}
+
+#else
+
+static inline bool bridge_is_active(void) {
+    return false;
+}
+
+static inline bool bridge_take_tx_failure(uint32_t now_ms) {
+    (void)now_ms;
+    return false;
+}
+
+#endif
+
 void connection_host_changed_kb(connection_host_t host) {
+    if (bridge_is_active()) {
+        // The bridge pins the host itself; cancelling here would be meaningless.
+        return;
+    }
+
     cancel_pending_operation();
 
     if (host == CONNECTION_HOST_2P4GHZ) {
@@ -303,6 +472,11 @@ static void begin_keyboard_resync(void) {
 
 void bluetooth_init(void) {
     ocp_init();
+#ifdef OPENBOOT_BRIDGE_ENABLE
+    obb_init();
+    bridge_busy         = false;
+    bridge_ota_inflight = false;
+#endif
     selected_target             = OC_TARGET_UNKNOWN;
     reselect_deferred           = false;
     reselect_deferred_at        = 0;
@@ -328,6 +502,13 @@ void bluetooth_task(void) {
     uint8_t  budget = OPENCONTROLLER_RX_BUDGET;
     uint32_t now_ms = timer_read32();
 
+#ifdef OPENBOOT_BRIDGE_ENABLE
+    if (openboot_bridge_task(now_ms)) {
+        // The bridge owns the UART this iteration.
+        return;
+    }
+#endif
+
     if (connection_get_host_raw() == CONNECTION_HOST_2P4GHZ) {
         connection_set_host(CONNECTION_HOST_BLUETOOTH);
     }
@@ -344,16 +525,21 @@ void bluetooth_task(void) {
         }
     }
 
-    if (pending_operation != OC_OPERATION_NONE) {
-        service_pending_operation();
-    }
-    if (pending_operation == OC_OPERATION_NONE) {
-        sync_target();
+    // Nothing new may be queued while the bridge is waiting for its own control
+    // frame to be acknowledged; a select would sit in front of it.
+    if (!bridge_is_active()) {
+        if (pending_operation != OC_OPERATION_NONE) {
+            service_pending_operation();
+        }
+        if (pending_operation == OC_OPERATION_NONE) {
+            sync_target();
+        }
     }
 
     ocp_service(timer_read32(), opencontroller_uart_try_send, NULL);
 
     if (ocp_take_tx_failure()) {
+        bridge_take_tx_failure(timer_read32());
         selected_target = OC_TARGET_UNKNOWN;
         if (pending_operation != OC_OPERATION_NONE) {
             if (operation_cancelled) {
@@ -419,6 +605,20 @@ void bluetooth_send_raw_hid(uint8_t *data, uint8_t length) {
 }
 
 bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
+    if (bridge_is_active()) {
+        // These all queue control frames onto a UART the bridge owns.
+        switch (keycode) {
+            case OC_AUTO:
+            case OC_USB:
+            case OC_2G4:
+            case OC_PAIR:
+            case OC_UNPAIR:
+                return false;
+            default:
+                break;
+        }
+    }
+
     switch (keycode) {
         case OC_AUTO:
             if (record->event.pressed) {

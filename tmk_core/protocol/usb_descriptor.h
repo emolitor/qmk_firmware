@@ -151,6 +151,14 @@ typedef struct {
     USB_HID_Descriptor_HID_t   Digitizer_HID;
     USB_Descriptor_Endpoint_t  Digitizer_INEndpoint;
 #endif
+
+#ifdef OPENBOOT_BRIDGE_ENABLE
+    // OpenBoot bridge HID Interface
+    USB_Descriptor_Interface_t Openboot_Interface;
+    USB_HID_Descriptor_HID_t   Openboot_HID;
+    USB_Descriptor_Endpoint_t  Openboot_INEndpoint;
+    USB_Descriptor_Endpoint_t  Openboot_OUTEndpoint;
+#endif
 } USB_Descriptor_Configuration_t;
 
 /*
@@ -203,6 +211,10 @@ enum usb_interfaces {
 
 #if defined(DIGITIZER_ENABLE) && !defined(DIGITIZER_SHARED_EP)
     DIGITIZER_INTERFACE,
+#endif
+
+#ifdef OPENBOOT_BRIDGE_ENABLE
+    OPENBOOT_INTERFACE,
 #endif
     TOTAL_INTERFACES
 };
@@ -284,6 +296,15 @@ enum usb_endpoints {
 #        define DIGITIZER_IN_EPNUM SHARED_IN_EPNUM
 #    endif
 #endif
+
+#ifdef OPENBOOT_BRIDGE_ENABLE
+    OPENBOOT_IN_EPNUM = NEXT_EPNUM,
+#    ifdef USB_ENDPOINTS_ARE_REORDERABLE
+#        define OPENBOOT_OUT_EPNUM OPENBOOT_IN_EPNUM
+#    else
+    OPENBOOT_OUT_EPNUM = NEXT_EPNUM,
+#    endif
+#endif
 };
 
 #ifdef PROTOCOL_LUFA
@@ -309,5 +330,8 @@ enum usb_endpoints {
 #define CDC_EPSIZE 16
 #define JOYSTICK_EPSIZE 8
 #define DIGITIZER_EPSIZE 8
+// One OpenBoot protocol frame is at most 64 bytes, so a full-sized report can
+// always carry a whole frame plus the tunnel's two byte header.
+#define OPENBOOT_EPSIZE 64
 
 uint16_t get_usb_descriptor(const uint16_t wValue, const uint16_t wIndex, const uint16_t wLength, const void** const DescriptorAddress);

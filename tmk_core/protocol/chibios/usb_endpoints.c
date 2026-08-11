@@ -100,6 +100,17 @@ usb_endpoint_in_t usb_endpoints_in[USB_ENDPOINT_IN_COUNT] = {
 #    endif
     [USB_ENDPOINT_IN_CDC_SIGNALING] = QMK_USB_ENDPOINT_IN(USB_EP_MODE_TYPE_INTR, CDC_NOTIFICATION_EPSIZE, CDC_NOTIFICATION_EPNUM, CDC_SIGNALING_DUMMY_CAPACITY, NULL, NULL),
 #endif
+
+#if defined(OPENBOOT_BRIDGE_ENABLE)
+/* No report storage: this endpoint carries a byte stream, and report storage
+ * exists so a GET_REPORT or a nonzero SET_IDLE can replay the last report. A
+ * replayed report here would duplicate bytes inside the tunnel. */
+#    if defined(USB_ENDPOINTS_ARE_REORDERABLE)
+    [USB_ENDPOINT_IN_OPENBOOT] = QMK_USB_ENDPOINT_IN_SHARED(USB_EP_MODE_TYPE_INTR, OPENBOOT_EPSIZE, OPENBOOT_IN_EPNUM, OPENBOOT_IN_CAPACITY, NULL, NULL),
+#    else
+    [USB_ENDPOINT_IN_OPENBOOT] = QMK_USB_ENDPOINT_IN(USB_EP_MODE_TYPE_INTR, OPENBOOT_EPSIZE, OPENBOOT_IN_EPNUM, OPENBOOT_IN_CAPACITY, NULL, NULL),
+#    endif
+#endif
 };
 
 usb_endpoint_in_lut_t usb_endpoint_interface_lut[TOTAL_INTERFACES] = {
@@ -143,6 +154,13 @@ usb_endpoint_in_lut_t usb_endpoint_interface_lut[TOTAL_INTERFACES] = {
 #if defined(DIGITIZER_ENABLE) && !defined(DIGITIZER_SHARED_EP)
     [DIGITIZER_INTERFACE] = USB_ENDPOINT_IN_DIGITIZER,
 #endif
+
+/* Required even though this endpoint carries no report storage: a missing slot
+ * would default to 0, which is a valid index, so a GET_REPORT aimed here would
+ * be answered from another interface's stored report. */
+#if defined(OPENBOOT_BRIDGE_ENABLE)
+    [OPENBOOT_INTERFACE] = USB_ENDPOINT_IN_OPENBOOT,
+#endif
 };
 
 usb_endpoint_out_t usb_endpoints_out[USB_ENDPOINT_OUT_COUNT] = {
@@ -156,5 +174,9 @@ usb_endpoint_out_t usb_endpoints_out[USB_ENDPOINT_OUT_COUNT] = {
 
 #if defined(VIRTSER_ENABLE)
     [USB_ENDPOINT_OUT_CDC_DATA] = QMK_USB_ENDPOINT_OUT(USB_EP_MODE_TYPE_BULK, CDC_EPSIZE, CDC_OUT_EPNUM, CDC_OUT_CAPACITY),
+#endif
+
+#if defined(OPENBOOT_BRIDGE_ENABLE)
+    [USB_ENDPOINT_OUT_OPENBOOT] = QMK_USB_ENDPOINT_OUT(USB_EP_MODE_TYPE_INTR, OPENBOOT_EPSIZE, OPENBOOT_OUT_EPNUM, OPENBOOT_OUT_CAPACITY),
 #endif
 };
