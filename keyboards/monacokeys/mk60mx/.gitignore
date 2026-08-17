@@ -1,0 +1,3 @@
+# This branch intentionally ships the MK60MX VIA keymap and definition.
+!keymaps/via/
+!keymaps/via/**

@@ -13,11 +13,11 @@
         "extrakey": true,
         "mousekey": true,
         "nkro": true,
-        "rgb_matrix": true,
+        "rgb_matrix": true
     },
     "matrix_pins": {
         "cols": ["GP27", "GP28", "GP25", "GP26", "GP4", "GP3", "GP2", "GP1", "GP0", "GP10", "GP19", "GP18", "GP13", "GP12", "GP14"],
-        "rows": ["GP5", "GP6", "GP9", "GP11", "GP29"],
+        "rows": ["GP5", "GP6", "GP9", "GP11", "GP29"]
     },
     "processor": "RP2040",
     "url": "https://monacokeys.de/en/products/mk60mx-60-mechanical-keyboard-pcb",

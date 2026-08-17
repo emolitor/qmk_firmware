@@ -1,0 +1,169 @@
+{
+  "name": "MK60MX",
+  "vendorId": "0x6D6F",
+  "productId": "0x0002",
+  "firmwareVersion": 1,
+  "matrix": {
+    "rows": 5,
+    "cols": 15
+  },
+  "keycodes": [
+    "qmk_lighting"
+  ],
+  "menus": [
+    {
+      "label": "Lighting",
+      "content": [
+        {
+          "label": "Backlight",
+          "content": [
+            {
+              "label": "Enabled",
+              "type": "toggle",
+              "content": ["id_backlight_enable", 0, 2]
+            },
+            {
+              "label": "Effect",
+              "type": "dropdown",
+              "content": ["id_qmk_rgb_matrix_effect", 3, 2],
+              "options": [
+                ["All Off", 0],
+                ["Solid Color", 1],
+                ["Alphas and Mods", 2],
+                ["Gradient Up/Down", 3],
+                ["Gradient Left/Right", 4],
+                ["Breathing", 5],
+                ["Band Saturation", 6],
+                ["Band Value", 7],
+                ["Band Pinwheel Saturation", 8],
+                ["Band Pinwheel Value", 9],
+                ["Band Spiral Saturation", 10],
+                ["Band Spiral Value", 11],
+                ["Cycle All", 12],
+                ["Cycle Left/Right", 13],
+                ["Cycle Up/Down", 14],
+                ["Rainbow Moving Chevron", 15],
+                ["Cycle Out/In", 16],
+                ["Cycle Out/In Dual", 17],
+                ["Cycle Pinwheel", 18],
+                ["Cycle Spiral", 19],
+                ["Dual Beacon", 20],
+                ["Rainbow Beacon", 21],
+                ["Rainbow Pinwheels", 22],
+                ["Flower Blooming", 23],
+                ["Raindrops", 24],
+                ["Jellybean Raindrops", 25],
+                ["Hue Breathing", 26],
+                ["Hue Pendulum", 27],
+                ["Hue Wave", 28],
+                ["Pixel Rain", 29],
+                ["Pixel Flow", 30],
+                ["Pixel Fractal", 31],
+                ["Typing Heatmap", 32],
+                ["Digital Rain", 33],
+                ["Solid Reactive Simple", 34],
+                ["Solid Reactive", 35],
+                ["Solid Reactive Wide", 36],
+                ["Solid Reactive Multiwide", 37],
+                ["Solid Reactive Cross", 38],
+                ["Solid Reactive Multicross", 39],
+                ["Solid Reactive Nexus", 40],
+                ["Solid Reactive Multinexus", 41],
+                ["Splash", 42],
+                ["Multisplash", 43],
+                ["Solid Splash", 44],
+                ["Solid Multisplash", 45],
+                ["Starlight Smooth", 46],
+                ["Starlight", 47],
+                ["Starlight Dual Saturation", 48],
+                ["Starlight Dual Hue", 49],
+                ["Riverflow", 50]
+              ]
+            },
+            {
+              "label": "Brightness",
+              "type": "range",
+              "options": [0, 255],
+              "content": ["id_qmk_rgb_matrix_brightness", 3, 1]
+            },
+            {
+              "label": "Effect Speed",
+              "type": "range",
+              "options": [0, 255],
+              "content": ["id_qmk_rgb_matrix_effect_speed", 3, 3]
+            },
+            {
+              "label": "Color",
+              "type": "color",
+              "content": ["id_qmk_rgb_matrix_color", 3, 4]
+            }
+          ]
+        },
+        {
+          "label": "Underglow",
+          "content": [
+            {
+              "label": "Enabled",
+              "type": "toggle",
+              "content": ["id_underglow_enable", 0, 1]
+            },
+            {
+              "label": "Effect",
+              "type": "dropdown",
+              "content": ["id_underglow_effect", 0, 3],
+              "options": [
+                ["Solid", 0],
+                ["Breathing", 1],
+                ["Rainbow Moving Chevron", 2],
+                ["Cycle All", 3],
+                ["Cycle Left/Right", 4],
+                ["Hue Breathing", 5],
+                ["Hue Wave", 6],
+                ["Gradient Left/Right", 7],
+                ["Dual Beacon", 8],
+                ["Riverflow", 9]
+              ]
+            },
+            {
+              "label": "Brightness",
+              "type": "range",
+              "options": [0, 255],
+              "content": ["id_underglow_brightness", 0, 4]
+            },
+            {
+              "label": "Effect Speed",
+              "type": "range",
+              "options": [0, 255],
+              "content": ["id_underglow_speed", 0, 6]
+            },
+            {
+              "label": "Color",
+              "type": "color",
+              "content": ["id_underglow_color", 0, 5]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "layouts": {
+    "keymap": [
+      [
+        "0,0", "0,1", "0,2", "0,3", "0,4", "0,5", "0,6", "0,7", "0,8", "0,9", "0,10", "0,11", "0,12", "0,13", "0,14"
+      ],
+      [
+        {"w": 1.5}, "1,0", "1,1", "1,2", "1,3", "1,4", "1,5", "1,6", "1,7", "1,8", "1,9", "1,10", "1,11", "1,12",
+        {"w": 1.25, "h": 2}, "2,13"
+      ],
+      [
+        {"w": 1.75}, "2,0", "2,1", "2,2", "2,3", "2,4", "2,5", "2,6", "2,7", "2,8", "2,9", "2,10", "2,11", "1,13"
+      ],
+      [
+        {"w": 1.25}, "3,0", "3,1", "3,2", "3,3", "3,4", "3,5", "3,6", "3,7", "3,8", "3,9", "3,10", "3,11", {"w": 1.75}, "3,12", "3,14"
+      ],
+      [
+        {"w": 1.25}, "4,0", {"w": 1.25}, "4,1", {"w": 1.25}, "4,2", {"w": 6.25}, "4,6", {"w": 1.25}, "4,10", {"w": 1.25}, "4,11", {"w": 1.25}, "4,12", {"w": 1.25}, "4,14"
+      ]
+    ]
+  }
+}
