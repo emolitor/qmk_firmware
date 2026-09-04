@@ -24,6 +24,19 @@
 #define OPENCONTROLLER_RX_BUDGET 32
 #define OPENCONTROLLER_RESELECT_DELAY_MS 1000
 
+/* Bench builds can watch the wire: a keyboard that defines
+ * OPENCONTROLLER_TRACE provides these and sees every frame handed to the UART
+ * and every byte taken from it. Production builds compile them away. */
+#ifdef OPENCONTROLLER_TRACE
+void opencontroller_trace_tx(const uint8_t *data, uint8_t length);
+void opencontroller_trace_rx(uint8_t byte);
+#    define OC_TRACE_TX(data, length) opencontroller_trace_tx((data), (length))
+#    define OC_TRACE_RX(byte) opencontroller_trace_rx(byte)
+#else
+#    define OC_TRACE_TX(data, length) ((void)0)
+#    define OC_TRACE_RX(byte) ((void)0)
+#endif
+
 /*
  * Idle time on the 2.4 GHz transport after which the module is told to tear
  * its link down and deep-sleep. The next key press wakes it; expect the bonded
@@ -92,6 +105,9 @@ static bool opencontroller_uart_try_send(const uint8_t *data, uint8_t length, vo
     }
     chSysUnlock();
 
+    if (written == length) {
+        OC_TRACE_TX(data, length);
+    }
     return written == length;
 }
 
@@ -669,7 +685,10 @@ void bluetooth_task(void) {
     }
 
     while (budget-- != 0 && uart_available()) {
-        ocp_feed_byte(uart_read(), now_ms);
+        uint8_t byte = uart_read();
+
+        OC_TRACE_RX(byte);
+        ocp_feed_byte(byte, now_ms);
     }
 
     if (connection_generation != ocp_get_connection_generation()) {

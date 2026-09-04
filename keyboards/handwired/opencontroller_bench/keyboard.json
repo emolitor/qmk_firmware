@@ -1,0 +1,69 @@
+{
+    "manufacturer": "OpenKeyboard",
+    "keyboard_name": "OpenController Bench",
+    "maintainer": "emolitor",
+    "url": "https://github.com/openkeyboard-org/OpenController",
+    "processor": "STM32U073",
+    "bootloader": "stm32-dfu",
+    "usb": {
+        "vid": "0x1209",
+        "pid": "0x0B83",
+        "device_version": "0.0.1"
+    },
+    "features": {
+        "bootmagic": false,
+        "extrakey": false,
+        "mousekey": false,
+        "nkro": false
+    },
+    "matrix_size": {
+        "rows": 1,
+        "cols": 8
+    },
+    "keycodes": [
+        {
+            "key": "OC_AUTO",
+            "label": "OpenController USB-preferred automatic routing"
+        },
+        {
+            "key": "OC_USB",
+            "label": "OpenController USB routing"
+        },
+        {
+            "key": "OC_2G4",
+            "label": "OpenController 2.4 GHz routing"
+        },
+        {
+            "key": "OC_PAIR",
+            "label": "OpenController 2.4 GHz pairing"
+        },
+        {
+            "key": "OC_UNPAIR",
+            "label": "OpenController unpair",
+            "aliases": [
+                "OC_UNPR"
+            ]
+        },
+        {
+            "key": "OC_SLEEP",
+            "label": "OpenController sleep now",
+            "aliases": [
+                "OC_SLP"
+            ]
+        }
+    ],
+    "layouts": {
+        "LAYOUT": {
+            "layout": [
+                {"matrix": [0, 0], "x": 0, "y": 0},
+                {"matrix": [0, 1], "x": 1, "y": 0},
+                {"matrix": [0, 2], "x": 2, "y": 0},
+                {"matrix": [0, 3], "x": 3, "y": 0},
+                {"matrix": [0, 4], "x": 4, "y": 0},
+                {"matrix": [0, 5], "x": 5, "y": 0},
+                {"matrix": [0, 6], "x": 6, "y": 0},
+                {"matrix": [0, 7], "x": 7, "y": 0}
+            ]
+        }
+    }
+}
