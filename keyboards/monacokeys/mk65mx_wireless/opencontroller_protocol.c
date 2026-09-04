@@ -23,6 +23,16 @@
 #define OCP_STATUS_DISCONNECTED 0x33
 #define OCP_STATUS_RECONNECTING 0x35
 #define OCP_STATUS_REJECTED 0x36
+/* The only reply that proves the sleep protocol; a stock module never sends it. */
+#define OCP_STATUS_SLEEP_READY 0x37
+
+/* Subcommands the sleep bookkeeping has to recognise on their ACK. */
+#define OCP_CONTROL_PAIR 0x51
+#define OCP_CONTROL_UNPAIR 0x52
+#define OCP_CONTROL_SLEEP_NOW 0x54
+#define OCP_CONTROL_SLEEP_UNLOCK 0x56
+#define OCP_CONTROL_AUTOSLEEP_ARM 0x57
+#define OCP_CONTROL_FACTORY_PAIR 0x63
 
 #define OCP_RX_FRAME_SIZE 3
 #define OCP_TX_FRAME_MAX_SIZE 10
@@ -35,6 +45,29 @@
 // 28/32768 s each. Eight milliseconds leaves margin for all six polls after
 // the UART ACK before an RF teardown command is allowed to follow.
 #define OCP_RELEASE_DWELL_MS 8
+
+/*
+ * Wake contract. The CH592 has no UART wake source: it wakes on a falling edge
+ * of its RX pin and the byte carrying that edge is lost. So the first frame
+ * after any silence is led by a discardable 0x00, then a gap that covers the
+ * module's oscillator settle (about 1.6 ms; 5 ms is what the OpenController
+ * update helper uses on the bench). Any received byte then keeps the module
+ * awake for its 100 ms activity holdoff, so a burst needs one preamble only.
+ * The awake window assumed here is the holdoff less a margin for the two
+ * clocks and this timer's 1 ms granularity.
+ */
+#define OCP_WAKE_PREAMBLE 0x00
+#define OCP_WAKE_GAP_MS 5
+#define OCP_MODULE_HOLDOFF_MS 100
+#define OCP_MODULE_AWAKE_WINDOW_MS (OCP_MODULE_HOLDOFF_MS - 10)
+/* After an acknowledged A6 54 the module drains its TX, tears the RF link
+ * down and enters sleep. Nothing may be sent until that has completed, or
+ * the byte lands on a module that is half-way down and wakes it straight back
+ * up. Design value from the OpenController side; not tightly bench-pinned. */
+#define OCP_SLEEP_ENTRY_SETTLE_MS 50
+/* The 5B 37 follows the A6 56 ACK from the same handler, so it arrives within
+ * a millisecond or two. A stock module never sends it. */
+#define OCP_SLEEP_READY_TIMEOUT_MS 100
 
 typedef enum {
     OCP_TX_NONE,
@@ -85,6 +118,17 @@ static uint32_t       tx_quiet_started_at;
 static bool           tx_failure_pending;
 static bool           release_dwell;
 static uint32_t       release_dwell_started_at;
+
+static ocp_sleep_capability_t   sleep_capability;
+static bool                     sleep_ready_wait; /* A6 56 ACKed, 5B 37 outstanding */
+static uint32_t                 sleep_ready_wait_started_at;
+static ocp_autosleep_state_t    autosleep_state;
+static ocp_module_sleep_state_t module_sleep_state;
+static uint32_t                 tx_last_at;   /* last byte handed to the UART */
+static bool                     wake_pending; /* preamble sent, frame follows after the gap */
+static uint32_t                 wake_sent_at;
+static bool                     sleep_settle; /* A6 54 ACKed, module entering sleep */
+static uint32_t                 sleep_settle_started_at;
 
 static ocp_link_state_t  link_state;
 static ocp_power_state_t power_state;
@@ -166,6 +210,13 @@ static void handle_status(uint8_t status) {
         case OCP_STATUS_CONNECTED:
             link_state = OCP_LINK_CONNECTED;
             ++connection_generation;
+            // The unlock is boot-scoped on the module and a reset there is
+            // invisible here, so every new link re-proves it: the caller sees
+            // UNKNOWN and negotiates again while the module is awake anyway.
+            if (sleep_capability == OCP_SLEEP_CAP_READY) {
+                sleep_capability = OCP_SLEEP_CAP_UNKNOWN;
+                autosleep_state  = OCP_AUTOSLEEP_OFF;
+            }
             break;
         case OCP_STATUS_DISCONNECTED:
             link_state = OCP_LINK_DISCONNECTED;
@@ -176,6 +227,47 @@ static void handle_status(uint8_t status) {
         case OCP_STATUS_REJECTED:
             link_state = OCP_LINK_REJECTED;
             break;
+        case OCP_STATUS_SLEEP_READY:
+            // Accepted whenever it arrives: a module that volunteers it is capable.
+            sleep_capability = OCP_SLEEP_CAP_READY;
+            sleep_ready_wait = false;
+            break;
+    }
+}
+
+/* Mirror the module's own sleep-protocol lifetime rules at the moment it
+ * accepts each frame. */
+static void control_acked(uint8_t subcommand, uint32_t now_ms) {
+    switch (subcommand) {
+        case OCP_CONTROL_SLEEP_UNLOCK:
+            // Resets the module to its baseline: unlocked, auto-sleep off.
+            autosleep_state = OCP_AUTOSLEEP_OFF;
+            if (sleep_capability != OCP_SLEEP_CAP_READY) {
+                sleep_ready_wait            = true;
+                sleep_ready_wait_started_at = now_ms;
+            }
+            break;
+        case OCP_CONTROL_AUTOSLEEP_ARM:
+            autosleep_state = sleep_capability == OCP_SLEEP_CAP_READY ? OCP_AUTOSLEEP_ARMED : OCP_AUTOSLEEP_OFF;
+            break;
+        case OCP_CONTROL_SLEEP_NOW:
+            if (sleep_capability != OCP_SLEEP_CAP_READY) {
+                module_sleep_state = OCP_MODULE_AWAKE;
+                break;
+            }
+            module_sleep_state      = OCP_MODULE_ASLEEP;
+            sleep_settle            = true;
+            sleep_settle_started_at = now_ms;
+            // The module tears the link down without announcing it.
+            link_state  = OCP_LINK_DISCONNECTED;
+            last_status = OCP_STATUS_DISCONNECTED;
+            break;
+        case OCP_CONTROL_PAIR:
+        case OCP_CONTROL_UNPAIR:
+        case OCP_CONTROL_FACTORY_PAIR:
+            // User-attended operations clear auto-sleep on the module.
+            autosleep_state = OCP_AUTOSLEEP_OFF;
+            break;
     }
 }
 
@@ -184,7 +276,7 @@ static void dispatch_rx_frame(uint32_t now_ms) {
         case OCP_HEADER_ACK:
             if (inflight.active) {
                 if (inflight.kind == OCP_TX_RESYNC) {
-                    if (resync_phase < 2) {
+                    if (resync_phase < 1) {
                         ++resync_phase;
                     } else {
                         resync_active = false;
@@ -192,6 +284,8 @@ static void dispatch_rx_frame(uint32_t now_ms) {
                 } else if (inflight.kind == OCP_TX_RELEASE) {
                     release_dwell            = true;
                     release_dwell_started_at = now_ms;
+                } else if (inflight.kind == OCP_TX_CONTROL) {
+                    control_acked(inflight.data[1], now_ms);
                 }
                 inflight.active = false;
                 inflight.kind   = OCP_TX_NONE;
@@ -233,8 +327,65 @@ static void process_rx_frame(uint32_t now_ms) {
     resync_rx_parser();
 }
 
+/* Every byte the host puts on the wire wakes a sleeping module and restarts
+ * its activity holdoff, whether or not the module could parse it. */
+static void note_tx(uint32_t now_ms) {
+    tx_last_at = now_ms;
+    if (module_sleep_state == OCP_MODULE_ASLEEP) {
+        module_sleep_state = OCP_MODULE_AWAKE;
+    }
+}
+
+static bool module_may_be_asleep(uint32_t now_ms) {
+    if (sleep_capability != OCP_SLEEP_CAP_READY) {
+        return false;
+    }
+    if (module_sleep_state == OCP_MODULE_ASLEEP) {
+        return true;
+    }
+    if (autosleep_state != OCP_AUTOSLEEP_ARMED) {
+        return false;
+    }
+    // Auto-sleep only runs in RF idle and in the bonded search's radio-off
+    // slices; a connected module stays awake by design.
+    if (link_state == OCP_LINK_CONNECTED) {
+        return false;
+    }
+    return (uint32_t)(now_ms - tx_last_at) >= OCP_MODULE_AWAKE_WINDOW_MS;
+}
+
+/*
+ * Hand one frame to the UART, or the wake preamble in its place when the
+ * module may be asleep. Returning false in the preamble case leaves the frame
+ * where it was; the caller offers it again once the gap has elapsed, exactly
+ * as it would after a full output queue.
+ */
+static bool emit_frame(const uint8_t *data, uint8_t length, uint32_t now_ms, ocp_send_callback_t send, void *context) {
+    static const uint8_t preamble = OCP_WAKE_PREAMBLE;
+
+    if (send == NULL) {
+        return false;
+    }
+
+    if (module_may_be_asleep(now_ms)) {
+        if (send(&preamble, 1, context)) {
+            wake_pending = true;
+            wake_sent_at = now_ms;
+            note_tx(now_ms);
+            ++diagnostics.wake_preambles;
+        }
+        return false;
+    }
+
+    if (!send(data, length, context)) {
+        return false;
+    }
+    note_tx(now_ms);
+    return true;
+}
+
 static bool send_frame(const uint8_t *data, uint8_t length, ocp_tx_kind_t kind, uint32_t now_ms, ocp_send_callback_t send, void *context) {
-    if (send == NULL || !send(data, length, context)) {
+    if (!emit_frame(data, length, now_ms, send, context)) {
         return false;
     }
 
@@ -247,12 +398,29 @@ static bool send_frame(const uint8_t *data, uint8_t length, ocp_tx_kind_t kind, 
     return true;
 }
 
-static void service_reply_ack(ocp_send_callback_t send, void *context) {
+/* Reply ACKs answer a frame the module has just sent, so it is awake; they
+ * never carry a preamble. The caller keeps them away from a module the host
+ * has deliberately put to sleep. */
+static void service_reply_ack(uint32_t now_ms, ocp_send_callback_t send, void *context) {
     static const uint8_t ack[] = {OCP_HEADER_ACK, OCP_ACK_BYTE_1, OCP_ACK_BYTE_2};
 
     if (send != NULL && send(ack, sizeof(ack), context)) {
         --reply_acks_pending;
+        note_tx(now_ms);
     }
+}
+
+/* An unresponsive module may have been reset, which clears its unlock. */
+static void reset_sleep_state(void) {
+    sleep_capability            = OCP_SLEEP_CAP_UNKNOWN;
+    sleep_ready_wait            = false;
+    sleep_ready_wait_started_at = 0;
+    autosleep_state             = OCP_AUTOSLEEP_OFF;
+    module_sleep_state          = OCP_MODULE_AWAKE;
+    wake_pending                = false;
+    wake_sent_at                = 0;
+    sleep_settle                = false;
+    sleep_settle_started_at     = 0;
 }
 
 static void abort_transaction(uint32_t now_ms) {
@@ -268,6 +436,7 @@ static void abort_transaction(uint32_t now_ms) {
     resync_active = false;
     resync_phase  = 0;
     release_dwell = false;
+    reset_sleep_state();
 
     link_state  = OCP_LINK_DISCONNECTED;
     last_status = OCP_STATUS_DISCONNECTED;
@@ -288,9 +457,18 @@ static void service_inflight(uint32_t now_ms, ocp_send_callback_t send, void *co
         return;
     }
 
-    if (send != NULL && send(inflight.data, inflight.length, context)) {
+    if (emit_frame(inflight.data, inflight.length, now_ms, send, context)) {
         ++inflight.attempts;
         inflight.sent_at = now_ms;
+    }
+}
+
+static void expire_sleep_ready_wait(uint32_t now_ms) {
+    if (sleep_ready_wait && (uint32_t)(now_ms - sleep_ready_wait_started_at) >= OCP_SLEEP_READY_TIMEOUT_MS) {
+        sleep_ready_wait = false;
+        if (sleep_capability == OCP_SLEEP_CAP_PENDING) {
+            sleep_capability = OCP_SLEEP_CAP_UNSUPPORTED;
+        }
     }
 }
 
@@ -315,9 +493,12 @@ static bool service_keyboard(const uint8_t *report, ocp_tx_kind_t kind, uint32_t
     return sent;
 }
 
+/* Empty first, then the current state: whatever the receiver still held from
+ * before the link went down is released, and a key held across the reconnect
+ * (the key that woke the module, typically) reaches the host exactly once. */
 static void service_resync(uint32_t now_ms, ocp_send_callback_t send, void *context) {
     static const uint8_t empty_report[OCP_KEYBOARD_REPORT_SIZE] = {0};
-    const uint8_t       *report                                 = resync_phase == 1 ? empty_report : resync_report;
+    const uint8_t       *report                                 = resync_phase == 0 ? empty_report : resync_report;
 
     service_keyboard(report, OCP_TX_RESYNC, now_ms, send, context);
 }
@@ -363,6 +544,9 @@ void ocp_init(void) {
     release_dwell            = false;
     release_dwell_started_at = 0;
 
+    reset_sleep_state();
+    tx_last_at = 0;
+
     link_state            = OCP_LINK_UNKNOWN;
     power_state           = OCP_POWER_UNKNOWN;
     keyboard_leds         = 0;
@@ -389,10 +573,33 @@ void ocp_feed_byte(uint8_t byte, uint32_t now_ms) {
 
 void ocp_service(uint32_t now_ms, ocp_send_callback_t send, void *context) {
     expire_partial_frame(now_ms);
+    expire_sleep_ready_wait(now_ms);
+
+    if (sleep_settle) {
+        if ((uint32_t)(now_ms - sleep_settle_started_at) < OCP_SLEEP_ENTRY_SETTLE_MS) {
+            // Anything the module said on its way down needs no answer.
+            reply_acks_pending = 0;
+            return;
+        }
+        sleep_settle = false;
+    }
+
+    if (wake_pending) {
+        if ((uint32_t)(now_ms - wake_sent_at) < OCP_WAKE_GAP_MS) {
+            return;
+        }
+        wake_pending = false;
+    }
 
     if (reply_acks_pending != 0) {
-        service_reply_ack(send, context);
-        return;
+        if (module_sleep_state == OCP_MODULE_ASLEEP) {
+            // The module treats a host ACK as inert; sending one would only
+            // wake it, and with auto-sleep off it would then stay awake.
+            reply_acks_pending = 0;
+        } else {
+            service_reply_ack(now_ms, send, context);
+            return;
+        }
     }
 
     if (inflight.active) {
@@ -496,7 +703,7 @@ void ocp_begin_keyboard_resync(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]) {
 }
 
 bool ocp_is_idle(void) {
-    return rx_length == 0 && reply_acks_pending == 0 && !inflight.active && action_count == 0 && !resync_active && !keyboard_report_pending && !tx_quiet && !release_dwell;
+    return rx_length == 0 && reply_acks_pending == 0 && !inflight.active && action_count == 0 && !resync_active && !keyboard_report_pending && !tx_quiet && !release_dwell && !wake_pending && !sleep_settle;
 }
 
 bool ocp_resync_is_active(void) {
@@ -507,6 +714,59 @@ bool ocp_take_tx_failure(void) {
     bool failed        = tx_failure_pending;
     tx_failure_pending = false;
     return failed;
+}
+
+bool ocp_queue_sleep_negotiate(void) {
+    if (!ocp_queue_control(OCP_CONTROL_SLEEP_UNLOCK)) {
+        return false;
+    }
+
+    if (sleep_capability != OCP_SLEEP_CAP_READY) {
+        sleep_capability = OCP_SLEEP_CAP_PENDING;
+    }
+    // The module's auto-sleep flag stays as it is until it accepts the frame.
+    return true;
+}
+
+bool ocp_queue_autosleep_arm(void) {
+    if (sleep_capability != OCP_SLEEP_CAP_READY || autosleep_state != OCP_AUTOSLEEP_OFF) {
+        return false;
+    }
+    if (!ocp_queue_control(OCP_CONTROL_AUTOSLEEP_ARM)) {
+        return false;
+    }
+
+    autosleep_state = OCP_AUTOSLEEP_ARMING;
+    return true;
+}
+
+bool ocp_queue_sleep_now(void) {
+    static const uint8_t sleep_now = OCP_CONTROL_SLEEP_NOW;
+
+    if (sleep_capability != OCP_SLEEP_CAP_READY || module_sleep_state != OCP_MODULE_AWAKE) {
+        return false;
+    }
+    // Behind the release barrier: a release that is still pending or still
+    // inside its RF-delivery dwell must reach the receiver before the link is
+    // torn down, or the host keeps the key pressed until the next wake.
+    if (!ocp_queue_release_then_controls(&sleep_now, 1)) {
+        return false;
+    }
+
+    module_sleep_state = OCP_MODULE_SLEEP_REQUESTED;
+    return true;
+}
+
+ocp_sleep_capability_t ocp_get_sleep_capability(void) {
+    return sleep_capability;
+}
+
+ocp_autosleep_state_t ocp_get_autosleep_state(void) {
+    return autosleep_state;
+}
+
+ocp_module_sleep_state_t ocp_get_module_sleep_state(void) {
+    return module_sleep_state;
 }
 
 ocp_link_state_t ocp_get_link_state(void) {

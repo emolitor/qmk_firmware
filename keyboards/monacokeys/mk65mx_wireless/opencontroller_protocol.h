@@ -28,6 +28,38 @@ typedef enum {
     OCP_POWER_CRITICAL,
 } ocp_power_state_t;
 
+/*
+ * Whether the module runs the opt-in UART sleep protocol. Only the 5B 37 92
+ * reply to an A6 56 unlock proves it: a stock module ACKs A6 56 like any other
+ * frame and then silently ignores every sleep command, so nothing sleep-related
+ * is sent until this reads READY.
+ */
+typedef enum {
+    OCP_SLEEP_CAP_UNKNOWN,     /* not negotiated since the last reset or link-up */
+    OCP_SLEEP_CAP_PENDING,     /* A6 56 queued, in flight, or awaiting 5B 37 */
+    OCP_SLEEP_CAP_UNSUPPORTED, /* A6 56 acknowledged without a 5B 37 */
+    OCP_SLEEP_CAP_READY,       /* 5B 37 seen */
+} ocp_sleep_capability_t;
+
+/* The host's model of the module's A6 57 auto-sleep flag. */
+typedef enum {
+    OCP_AUTOSLEEP_OFF,
+    OCP_AUTOSLEEP_ARMING, /* A6 57 queued or in flight */
+    OCP_AUTOSLEEP_ARMED,
+} ocp_autosleep_state_t;
+
+/*
+ * The host's model of an explicit A6 54 sleep. ASLEEP ends with the next byte
+ * the host sends, which is what wakes the module. A module that is merely
+ * auto-sleeping between activity holdoffs is tracked from transmit silence
+ * instead and always reads AWAKE here.
+ */
+typedef enum {
+    OCP_MODULE_AWAKE,
+    OCP_MODULE_SLEEP_REQUESTED, /* A6 54 queued or in flight */
+    OCP_MODULE_ASLEEP,          /* A6 54 acknowledged; RF torn down */
+} ocp_module_sleep_state_t;
+
 typedef struct {
     uint16_t rx_checksum_errors;
     uint16_t rx_partial_timeouts;
@@ -35,6 +67,7 @@ typedef struct {
     uint16_t rx_spurious_acks;
     uint16_t tx_ack_timeouts;
     uint16_t control_queue_overflows;
+    uint16_t wake_preambles;
 } ocp_diagnostics_t;
 
 /**
@@ -84,7 +117,7 @@ bool ocp_actions_pending(void);
  */
 void ocp_set_keyboard_report(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]);
 
-/** Queue an ACK-driven current/empty/current keyboard state resync. */
+/** Queue an ACK-driven empty-then-current keyboard state resync. */
 void ocp_begin_keyboard_resync(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]);
 
 /** True only when no parser reply, transaction, report or guard is pending. */
@@ -95,6 +128,35 @@ bool ocp_resync_is_active(void);
 
 /** Consume the notification raised when a transaction exhausts its attempts. */
 bool ocp_take_tx_failure(void);
+
+/*
+ * Sleep protocol. The capability handshake is boot-scoped on the module: it
+ * survives transport selection, pairing and unpairing, but a module reset
+ * clears it, so every path that may have reset the module (ocp_init(), a
+ * transaction abort) drops the capability back to UNKNOWN and the caller must
+ * negotiate again before using any sleep command.
+ *
+ * Waking is transparent to callers: once the capability is READY the service
+ * loop precedes the first frame after a period of silence with a discardable
+ * 0x00 and a settle gap, because the module wakes on the RX falling edge and
+ * loses the byte that carried it.
+ */
+
+/** Queue the A6 56 unlock. Re-sending it also turns auto-sleep off again. */
+bool ocp_queue_sleep_negotiate(void);
+
+/** Queue the A6 57 arm. Refused unless the capability is READY. */
+bool ocp_queue_autosleep_arm(void);
+
+/**
+ * Queue the A6 54 explicit sleep behind a release barrier (two queue slots).
+ * Refused unless READY and currently awake.
+ */
+bool ocp_queue_sleep_now(void);
+
+ocp_sleep_capability_t   ocp_get_sleep_capability(void);
+ocp_autosleep_state_t    ocp_get_autosleep_state(void);
+ocp_module_sleep_state_t ocp_get_module_sleep_state(void);
 
 ocp_link_state_t         ocp_get_link_state(void);
 ocp_power_state_t        ocp_get_power_state(void);

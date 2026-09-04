@@ -38,6 +38,28 @@ void feed_status(uint8_t status, uint32_t now_ms) {
     ocp_feed_byte(static_cast<uint8_t>(0x5B + status), now_ms);
 }
 
+/* Drives the A6 56 unlock through its ACK and 5B 37 reply, then discards the
+ * frames it produced so the test under way sees only its own traffic. */
+void negotiate_ready(Capture &capture, uint32_t now_ms) {
+    ASSERT_TRUE(ocp_queue_sleep_negotiate());
+    ocp_service(now_ms, capture_send, &capture);
+    ASSERT_EQ(capture.frames.back(), (Frame{0xA6, 0x56, 0xFC}));
+    feed_ack(now_ms);
+    feed_status(0x37, now_ms);
+    ocp_service(now_ms, capture_send, &capture); // The reply ACK for 5B 37.
+    ASSERT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_READY);
+    capture.frames.clear();
+}
+
+void arm_autosleep(Capture &capture, uint32_t now_ms) {
+    ASSERT_TRUE(ocp_queue_autosleep_arm());
+    ocp_service(now_ms, capture_send, &capture);
+    ASSERT_EQ(capture.frames.back(), (Frame{0xA6, 0x57, 0xFD}));
+    feed_ack(now_ms);
+    ASSERT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_ARMED);
+    capture.frames.clear();
+}
+
 class OpenControllerProtocol : public testing::Test {
    protected:
     void SetUp() override {
@@ -172,7 +194,7 @@ TEST_F(OpenControllerProtocol, DestructiveBarrierSequenceEnqueueIsAtomic) {
     EXPECT_EQ(capture.frames[6], (Frame{0xA1, 0, 0, 0, 0, 0, 0, 0, 0, 0xA1}));
 }
 
-TEST_F(OpenControllerProtocol, ReconnectResyncHoldsLiveReportUntilSnapshotSequenceCompletes) {
+TEST_F(OpenControllerProtocol, ReconnectResyncReleasesThenAssertsOnceAndHoldsTheLiveReport) {
     Capture                                             capture;
     const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> snapshot = {0x02, 0, 0x04, 0, 0, 0, 0, 0};
     const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> live     = {0x02, 0, 0x05, 0, 0, 0, 0, 0};
@@ -187,18 +209,17 @@ TEST_F(OpenControllerProtocol, ReconnectResyncHoldsLiveReportUntilSnapshotSequen
     ocp_service(2, capture_send, &capture);
     feed_ack(3);
     ocp_service(3, capture_send, &capture);
-    feed_ack(4);
-    ocp_service(4, capture_send, &capture);
 
-    ASSERT_EQ(capture.frames.size(), 5U);
+    // Empty, then the snapshot exactly once: a key held across the reconnect
+    // is not typed twice. The live report waits until the sequence is done.
+    ASSERT_EQ(capture.frames.size(), 4U);
     EXPECT_EQ(capture.frames[0], (Frame{0x61, 0x0D, 0x0A}));
-    EXPECT_EQ(Frame(capture.frames[1].begin() + 1, capture.frames[1].begin() + 9), Frame(snapshot.begin(), snapshot.end()));
-    EXPECT_EQ(Frame(capture.frames[2].begin() + 1, capture.frames[2].begin() + 9), Frame(OCP_KEYBOARD_REPORT_SIZE, 0));
-    EXPECT_EQ(Frame(capture.frames[3].begin() + 1, capture.frames[3].begin() + 9), Frame(snapshot.begin(), snapshot.end()));
-    EXPECT_EQ(Frame(capture.frames[4].begin() + 1, capture.frames[4].begin() + 9), Frame(live.begin(), live.end()));
+    EXPECT_EQ(Frame(capture.frames[1].begin() + 1, capture.frames[1].begin() + 9), Frame(OCP_KEYBOARD_REPORT_SIZE, 0));
+    EXPECT_EQ(Frame(capture.frames[2].begin() + 1, capture.frames[2].begin() + 9), Frame(snapshot.begin(), snapshot.end()));
+    EXPECT_EQ(Frame(capture.frames[3].begin() + 1, capture.frames[3].begin() + 9), Frame(live.begin(), live.end()));
     EXPECT_FALSE(ocp_resync_is_active());
 
-    feed_ack(5);
+    feed_ack(4);
     ocp_service(25, capture_send, &capture);
     EXPECT_TRUE(ocp_is_idle());
 }
@@ -214,6 +235,303 @@ TEST_F(OpenControllerProtocol, RejectedTransportDoesNotSendPendingKeyboardReport
 
     ASSERT_EQ(capture.frames.size(), 1U);
     EXPECT_EQ(capture.frames[0], (Frame{0x61, 0x0D, 0x0A}));
+}
+
+TEST_F(OpenControllerProtocol, SleepCommandsAreRefusedUntilTheReadyStatusIsSeen) {
+    Capture capture;
+
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_UNKNOWN);
+    EXPECT_FALSE(ocp_queue_autosleep_arm());
+    EXPECT_FALSE(ocp_queue_sleep_now());
+    EXPECT_EQ(ocp_get_diagnostics()->control_queue_overflows, 0);
+
+    ASSERT_TRUE(ocp_queue_sleep_negotiate());
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_PENDING);
+    ocp_service(0, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(capture.frames[0], (Frame{0xA6, 0x56, 0xFC}));
+
+    // A stock module ACKs the unlock like any other frame and says no more.
+    feed_ack(1);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_PENDING);
+    ocp_service(100, capture_send, &capture);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_PENDING);
+    ocp_service(101, capture_send, &capture);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_UNSUPPORTED);
+    EXPECT_FALSE(ocp_queue_autosleep_arm());
+    EXPECT_FALSE(ocp_queue_sleep_now());
+    EXPECT_EQ(capture.frames.size(), 1U);
+
+    // A late 5B 37 is still proof.
+    feed_status(0x37, 200);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_READY);
+    ocp_service(200, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(capture.frames[1], (Frame{0x61, 0x0D, 0x0A}));
+    EXPECT_TRUE(ocp_queue_autosleep_arm());
+}
+
+TEST_F(OpenControllerProtocol, AutoSleepStateFollowsTheModuleLifetimeRules) {
+    Capture capture;
+
+    negotiate_ready(capture, 0);
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_OFF);
+
+    ASSERT_TRUE(ocp_queue_autosleep_arm());
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_ARMING);
+    EXPECT_FALSE(ocp_queue_autosleep_arm());
+    ocp_service(1, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(capture.frames[0], (Frame{0xA6, 0x57, 0xFD}));
+    feed_ack(2);
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_ARMED);
+
+    // Unpair clears it on the module.
+    ASSERT_TRUE(ocp_queue_control(0x52));
+    ocp_service(3, capture_send, &capture);
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_ARMED);
+    feed_ack(4);
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_OFF);
+
+    // Re-sending the unlock is the disable path and keeps the capability.
+    arm_autosleep(capture, 5);
+    ASSERT_TRUE(ocp_queue_sleep_negotiate());
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_READY);
+    ocp_service(6, capture_send, &capture);
+    feed_ack(7);
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_OFF);
+    ocp_service(200, capture_send, &capture);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_READY);
+}
+
+TEST_F(OpenControllerProtocol, WakePreambleLeadsTheFirstFrameAfterSilenceUnlessConnected) {
+    Capture capture;
+
+    negotiate_ready(capture, 0);
+    arm_autosleep(capture, 1);
+
+    // Inside the module's activity holdoff: no preamble.
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(50, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(capture.frames[0], (Frame{0xA6, 0x30, 0xD6}));
+    feed_ack(51);
+    EXPECT_EQ(ocp_get_diagnostics()->wake_preambles, 0);
+
+    // After the holdoff the module may be asleep: NULL, gap, frame.
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(200, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(capture.frames[1], (Frame{0x00}));
+    EXPECT_EQ(ocp_get_diagnostics()->wake_preambles, 1);
+    EXPECT_FALSE(ocp_is_idle());
+    ocp_service(204, capture_send, &capture);
+    EXPECT_EQ(capture.frames.size(), 2U);
+    ocp_service(205, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 3U);
+    EXPECT_EQ(capture.frames[2], (Frame{0xA6, 0x30, 0xD6}));
+    EXPECT_TRUE(ocp_actions_pending());
+    feed_ack(206);
+
+    // The rest of a burst rides on the holdoff the preamble started.
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(250, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 4U);
+    EXPECT_EQ(capture.frames[3], (Frame{0xA6, 0x30, 0xD6}));
+    feed_ack(251);
+
+    // A connected module never auto-sleeps, however long the host is quiet.
+    feed_status(0x32, 300);
+    ocp_service(300, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 5U);
+    EXPECT_EQ(capture.frames[4], (Frame{0x61, 0x0D, 0x0A}));
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(5000, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 6U);
+    EXPECT_EQ(capture.frames[5], (Frame{0xA6, 0x30, 0xD6}));
+    EXPECT_EQ(ocp_get_diagnostics()->wake_preambles, 1);
+}
+
+TEST_F(OpenControllerProtocol, ReplyAckNeverCarriesAPreambleWhileAutoSleeping) {
+    Capture capture;
+
+    negotiate_ready(capture, 0);
+    arm_autosleep(capture, 1);
+
+    // The module spoke, so it is awake: answer it plainly, and the answer
+    // itself restarts the holdoff.
+    feed_status(0x33, 500);
+    ocp_service(500, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(capture.frames[0], (Frame{0x61, 0x0D, 0x0A}));
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(520, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(capture.frames[1], (Frame{0xA6, 0x30, 0xD6}));
+    EXPECT_EQ(ocp_get_diagnostics()->wake_preambles, 0);
+}
+
+TEST_F(OpenControllerProtocol, ExplicitSleepFollowsAReleaseBarrierHoldsTransmitThroughEntryThenWakesWithPreamble) {
+    Capture capture;
+
+    feed_status(0x32, 0);
+    ocp_service(0, capture_send, &capture);
+    negotiate_ready(capture, 0);
+
+    ASSERT_TRUE(ocp_queue_sleep_now());
+    EXPECT_EQ(ocp_get_module_sleep_state(), OCP_MODULE_SLEEP_REQUESTED);
+    EXPECT_FALSE(ocp_queue_sleep_now());
+
+    // The empty report goes first, and the sleep waits out its RF dwell: a
+    // release still on its way to the receiver lands before the link is cut.
+    ocp_service(1, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(capture.frames[0], (Frame{0xA1, 0, 0, 0, 0, 0, 0, 0, 0, 0xA1}));
+    feed_ack(2);
+    ocp_service(9, capture_send, &capture);
+    EXPECT_EQ(capture.frames.size(), 1U);
+    ocp_service(10, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(capture.frames[1], (Frame{0xA6, 0x54, 0xFA}));
+    capture.frames.clear();
+    feed_ack(11);
+    EXPECT_EQ(ocp_get_module_sleep_state(), OCP_MODULE_ASLEEP);
+    EXPECT_EQ(ocp_get_link_state(), OCP_LINK_DISCONNECTED);
+    EXPECT_FALSE(ocp_is_idle());
+
+    // Nothing goes out while the module is on its way down, not even the ACK
+    // for something it said on the way; the queued frame simply waits.
+    feed_status(0x33, 12);
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(12, capture_send, &capture);
+    ocp_service(60, capture_send, &capture);
+    EXPECT_TRUE(capture.frames.empty());
+
+    // Then the first frame is led by the wake preamble.
+    ocp_service(61, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(capture.frames[0], (Frame{0x00}));
+    EXPECT_EQ(ocp_get_module_sleep_state(), OCP_MODULE_AWAKE);
+    ocp_service(65, capture_send, &capture);
+    EXPECT_EQ(capture.frames.size(), 1U);
+    ocp_service(66, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(capture.frames[1], (Frame{0xA6, 0x30, 0xD6}));
+    feed_ack(67);
+    EXPECT_FALSE(ocp_actions_pending());
+}
+
+TEST_F(OpenControllerProtocol, ANewLinkDemotesTheCapabilityForRenegotiation) {
+    Capture capture;
+
+    negotiate_ready(capture, 0);
+    arm_autosleep(capture, 1);
+
+    // The module may have reset unseen between two links; the only cheap
+    // moment to re-prove the boot-scoped unlock is when a link comes up.
+    feed_status(0x32, 2);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_UNKNOWN);
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_OFF);
+    EXPECT_FALSE(ocp_queue_sleep_now());
+    ocp_service(2, capture_send, &capture);
+    capture.frames.clear();
+
+    negotiate_ready(capture, 3);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_READY);
+    EXPECT_TRUE(ocp_queue_autosleep_arm());
+
+    // A stock module that replaced it never answers, and stays unsupported.
+    feed_status(0x32, 4);
+    ASSERT_TRUE(ocp_queue_sleep_negotiate());
+    ocp_service(5, capture_send, &capture); // the reply ACK
+    ocp_service(6, capture_send, &capture); // the arm queued earlier, inert now
+    feed_ack(6);
+    ocp_service(7, capture_send, &capture);
+    EXPECT_EQ(capture.frames.back(), (Frame{0xA6, 0x56, 0xFC}));
+    feed_ack(8);
+    ocp_service(200, capture_send, &capture);
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_UNSUPPORTED);
+}
+
+TEST_F(OpenControllerProtocol, ReplyAckIsDroppedWhileTheModuleIsExplicitlyAsleep) {
+    Capture capture;
+
+    negotiate_ready(capture, 0);
+    ASSERT_TRUE(ocp_queue_sleep_now());
+    ocp_service(1, capture_send, &capture); // the release barrier
+    feed_ack(2);
+    ocp_service(10, capture_send, &capture); // the sleep, after the dwell
+    feed_ack(11);
+    ASSERT_EQ(ocp_get_module_sleep_state(), OCP_MODULE_ASLEEP);
+    capture.frames.clear();
+
+    // Long after entry: an unsolicited frame is answered with nothing, and the
+    // module stays asleep as far as the host is concerned.
+    feed_status(0x21, 1000);
+    ocp_service(1000, capture_send, &capture);
+    ocp_service(1001, capture_send, &capture);
+    EXPECT_TRUE(capture.frames.empty());
+    EXPECT_EQ(ocp_get_power_state(), OCP_POWER_LOW);
+    EXPECT_EQ(ocp_get_module_sleep_state(), OCP_MODULE_ASLEEP);
+    EXPECT_TRUE(ocp_is_idle());
+}
+
+TEST_F(OpenControllerProtocol, ExplicitSleepIsInertWithoutTheCapability) {
+    Capture capture;
+
+    // Queued as a raw control by a caller that skipped negotiation.
+    ASSERT_TRUE(ocp_queue_control(0x54));
+    feed_status(0x32, 0);
+    ocp_service(0, capture_send, &capture);
+    ocp_service(1, capture_send, &capture);
+    feed_ack(2);
+
+    EXPECT_EQ(ocp_get_module_sleep_state(), OCP_MODULE_AWAKE);
+    EXPECT_EQ(ocp_get_link_state(), OCP_LINK_CONNECTED);
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(3, capture_send, &capture);
+    EXPECT_EQ(capture.frames.back(), (Frame{0xA6, 0x30, 0xD6}));
+}
+
+TEST_F(OpenControllerProtocol, TransactionAbortForgetsTheSleepCapability) {
+    Capture capture;
+
+    negotiate_ready(capture, 0);
+    arm_autosleep(capture, 1);
+
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(10, capture_send, &capture);
+    ocp_service(30, capture_send, &capture);
+    ocp_service(50, capture_send, &capture);
+    ocp_service(70, capture_send, &capture);
+    ASSERT_TRUE(ocp_take_tx_failure());
+
+    EXPECT_EQ(ocp_get_sleep_capability(), OCP_SLEEP_CAP_UNKNOWN);
+    EXPECT_EQ(ocp_get_autosleep_state(), OCP_AUTOSLEEP_OFF);
+    EXPECT_EQ(ocp_get_module_sleep_state(), OCP_MODULE_AWAKE);
+
+    // The renegotiation that follows goes out plainly.
+    ASSERT_TRUE(ocp_queue_sleep_negotiate());
+    ocp_service(1000, capture_send, &capture);
+    EXPECT_EQ(capture.frames.back(), (Frame{0xA6, 0x56, 0xFC}));
+}
+
+TEST_F(OpenControllerProtocol, WakeGapIsTimerWrapSafe) {
+    Capture capture;
+
+    negotiate_ready(capture, UINT32_MAX - 300);
+    arm_autosleep(capture, UINT32_MAX - 299);
+
+    ASSERT_TRUE(ocp_queue_control(0x30));
+    ocp_service(UINT32_MAX - 2, capture_send, &capture);
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(capture.frames[0], (Frame{0x00}));
+
+    ocp_service(1, capture_send, &capture); // Four milliseconds after the preamble.
+    EXPECT_EQ(capture.frames.size(), 1U);
+    ocp_service(2, capture_send, &capture); // Five.
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(capture.frames[1], (Frame{0xA6, 0x30, 0xD6}));
 }
 
 } // namespace

@@ -24,6 +24,17 @@
 #define OPENCONTROLLER_RX_BUDGET 32
 #define OPENCONTROLLER_RESELECT_DELAY_MS 1000
 
+/*
+ * Idle time on the 2.4 GHz transport after which the module is told to tear
+ * its link down and deep-sleep. The next key press wakes it; expect the bonded
+ * reconnect to take one to two seconds. Zero disables the timeout; OC_SLEEP
+ * still works. Auto-sleep (the module sleeping by itself whenever its radio
+ * is idle or searching) is independent of this and on by default.
+ */
+#ifndef OPENCONTROLLER_SLEEP_TIMEOUT_MS
+#    define OPENCONTROLLER_SLEEP_TIMEOUT_MS 600000
+#endif
+
 #define OC_COMMAND_SELECT_USB 0x11
 #define OC_COMMAND_SELECT_2G4 0x30
 #define OC_COMMAND_PAIR 0x51
@@ -63,6 +74,9 @@ static bool           operation_enqueued;
 static bool           operation_cancelled;
 static bool           operation_retry_deferred;
 static uint32_t       operation_retry_deferred_at;
+static bool           sleep_now_requested;  /* OC_SLEEP pressed */
+static bool           sleep_wake_requested; /* a key was pressed while the module sleeps */
+static uint32_t       link_requested_at;    /* last time the 2.4 GHz link was asked for */
 
 /* QMK's generic UART API has no nonblocking transmit operation. Queue an
  * entire protocol frame atomically only when ChibiOS has enough free space;
@@ -97,6 +111,15 @@ static oc_target_t desired_target(void) {
     }
 }
 
+/* Asking for the radio restarts the idle clock: a link that has just been
+ * requested is not idle, whatever the matrix has been doing. */
+static void note_selected_target(oc_target_t target) {
+    selected_target = target;
+    if (target == OC_TARGET_2G4) {
+        link_requested_at = timer_read32();
+    }
+}
+
 static bool select_target(oc_target_t target, bool force) {
     uint8_t command;
     bool    queued;
@@ -111,7 +134,7 @@ static bool select_target(oc_target_t target, bool force) {
         return false;
     }
 
-    selected_target   = target;
+    note_selected_target(target);
     reselect_deferred = false;
     return true;
 }
@@ -126,7 +149,7 @@ static bool reconnect_2g4(void) {
         return false;
     }
 
-    selected_target   = OC_TARGET_2G4;
+    note_selected_target(OC_TARGET_2G4);
     reselect_deferred = false;
     return true;
 }
@@ -190,8 +213,17 @@ static void sync_target(void) {
     }
 }
 
+/* A routing or pairing key is a later, more specific intent: it must not be
+ * followed by a sleep that was asked for earlier and got deferred. */
+static void cancel_sleep_requests(void) {
+    sleep_now_requested  = false;
+    sleep_wake_requested = false;
+}
+
 static void select_auto(void) {
     bool wait_for_operation = cancel_pending_operation();
+
+    cancel_sleep_requests();
 
     connection_set_host(CONNECTION_HOST_AUTO);
     if (!wait_for_operation) {
@@ -202,6 +234,8 @@ static void select_auto(void) {
 static void select_usb(void) {
     bool wait_for_operation = cancel_pending_operation();
 
+    cancel_sleep_requests();
+
     connection_set_host_noeeprom(CONNECTION_HOST_USB);
     if (!wait_for_operation) {
         force_target(OC_TARGET_USB);
@@ -210,6 +244,8 @@ static void select_usb(void) {
 
 static void select_2g4(void) {
     bool wait_for_operation = cancel_pending_operation();
+
+    cancel_sleep_requests();
 
     connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
     if (!wait_for_operation) {
@@ -223,6 +259,8 @@ static void pair_2g4(void) {
         return;
     }
 
+    cancel_sleep_requests();
+
     connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
     reselect_deferred        = false;
     pending_operation        = OC_OPERATION_PAIR;
@@ -235,6 +273,8 @@ static void unpair_2g4(void) {
     if (pending_operation != OC_OPERATION_NONE) {
         return;
     }
+
+    cancel_sleep_requests();
 
     connection_set_host(CONNECTION_HOST_AUTO);
     reselect_deferred        = false;
@@ -286,9 +326,118 @@ static void service_pending_operation(void) {
         return;
     }
 
-    selected_target          = target;
+    note_selected_target(target);
     operation_enqueued       = true;
     operation_retry_deferred = false;
+}
+
+static bool autosleep_wanted(void) {
+#ifdef OPENCONTROLLER_AUTOSLEEP_DISABLE
+    return false;
+#else
+    return true;
+#endif
+}
+
+static bool sleep_timeout_expired(void) {
+#if OPENCONTROLLER_SLEEP_TIMEOUT_MS > 0
+    return last_input_activity_elapsed() >= OPENCONTROLLER_SLEEP_TIMEOUT_MS && timer_elapsed32(link_requested_at) >= OPENCONTROLLER_SLEEP_TIMEOUT_MS;
+#else
+    return false;
+#endif
+}
+
+static void request_sleep(void) {
+    // Consumed when the frame is queued; validated against the transport there.
+    if (ocp_get_module_sleep_state() == OCP_MODULE_AWAKE) {
+        sleep_now_requested = true;
+    }
+}
+
+
+/* Presses wake the module, releases do not: the OC_SLEEP chord is still being
+ * let go while the sleep frame is on the wire. */
+static void note_key_press(void) {
+    if (ocp_get_module_sleep_state() != OCP_MODULE_AWAKE) {
+        sleep_wake_requested = true;
+    }
+}
+
+/*
+ * Keeps the module's sleep state in step with policy. Called only while no
+ * transport recovery or pairing operation is in progress, so the frames it
+ * queues never sit in front of a select, and at most one frame per call.
+ */
+static void service_sleep(void) {
+    switch (ocp_get_sleep_capability()) {
+        case OCP_SLEEP_CAP_UNKNOWN:
+            if (ocp_queue_available() != 0) {
+                ocp_queue_sleep_negotiate();
+            }
+            return;
+        case OCP_SLEEP_CAP_PENDING:
+            return;
+        case OCP_SLEEP_CAP_UNSUPPORTED:
+            sleep_now_requested  = false;
+            sleep_wake_requested = false;
+            return;
+        case OCP_SLEEP_CAP_READY:
+            break;
+    }
+
+    switch (ocp_get_module_sleep_state()) {
+        case OCP_MODULE_SLEEP_REQUESTED:
+            // Let the sleep complete; the wake is serviced once it has.
+            return;
+        case OCP_MODULE_ASLEEP:
+            if (sleep_wake_requested) {
+                sleep_wake_requested = false;
+                // Reselecting from scratch reuses the forced-RF-edge reconnect.
+                // The protocol layer puts the wake preamble in front of it.
+                if (desired_target() == OC_TARGET_2G4) {
+                    selected_target = OC_TARGET_UNKNOWN;
+                }
+            }
+            return;
+        case OCP_MODULE_AWAKE:
+            sleep_wake_requested = false;
+            break;
+    }
+
+    if (ocp_queue_available() == 0) {
+        return;
+    }
+
+    if (autosleep_wanted()) {
+        if (ocp_get_autosleep_state() == OCP_AUTOSLEEP_OFF) {
+            ocp_queue_autosleep_arm();
+            return;
+        }
+    } else if (ocp_get_autosleep_state() == OCP_AUTOSLEEP_ARMED) {
+        // Re-sending the unlock is the module's only auto-sleep disable path.
+        ocp_queue_sleep_negotiate();
+        return;
+    }
+
+    // Explicit sleep only makes sense on the radio. With USB selected the
+    // module is already idle and auto-sleep covers it.
+    if (desired_target() != OC_TARGET_2G4 || selected_target != OC_TARGET_2G4) {
+        sleep_now_requested = false;
+        return;
+    }
+    if (!sleep_now_requested && !sleep_timeout_expired()) {
+        return;
+    }
+    // A key still held on the host would stay held across the torn-down link.
+    if (has_anykey() || has_anymod()) {
+        return;
+    }
+    if (ocp_actions_pending() || ocp_resync_is_active() || ocp_queue_available() < 2) {
+        return;
+    }
+    if (ocp_queue_sleep_now()) {
+        sleep_now_requested = false;
+    }
 }
 
 #ifdef OPENBOOT_BRIDGE_ENABLE
@@ -343,6 +492,9 @@ static void bridge_release(void) {
     reselect_target       = OC_TARGET_UNKNOWN;
     connection_generation = ocp_get_connection_generation();
     reset_pending_operation();
+    sleep_now_requested  = false;
+    sleep_wake_requested = false;
+    link_requested_at    = timer_read32();
 
     connection_set_host_noeeprom(bridge_saved_host);
 
@@ -487,6 +639,9 @@ void bluetooth_init(void) {
     operation_cancelled         = false;
     operation_retry_deferred    = false;
     operation_retry_deferred_at = 0;
+    sleep_now_requested         = false;
+    sleep_wake_requested        = false;
+    link_requested_at           = timer_read32();
 
     if (connection_get_host_raw() == CONNECTION_HOST_2P4GHZ) {
         // Repair a value persisted by native OU_2P4/QK_OUTPUT_2P4GHZ.
@@ -533,6 +688,11 @@ void bluetooth_task(void) {
         }
         if (pending_operation == OC_OPERATION_NONE) {
             sync_target();
+            // Not during recovery: a failed transport must keep its backoff
+            // instead of being prodded with a sleep negotiation every pass.
+            if (!reselect_deferred) {
+                service_sleep();
+            }
         }
     }
 
@@ -613,6 +773,7 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
             case OC_2G4:
             case OC_PAIR:
             case OC_UNPAIR:
+            case OC_SLEEP:
                 return false;
             default:
                 break;
@@ -645,7 +806,17 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
                 unpair_2g4();
             }
             return false;
+        case OC_SLEEP:
+            if (record->event.pressed) {
+                request_sleep();
+            }
+            return false;
         default:
+            // The routing keys above wake the module through the frames they
+            // queue; everything else wakes it by asking for the link back.
+            if (record->event.pressed) {
+                note_key_press();
+            }
             return process_record_user(keycode, record);
     }
 }

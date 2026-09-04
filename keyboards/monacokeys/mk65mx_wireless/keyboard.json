@@ -62,6 +62,13 @@
             "aliases": [
                 "OC_UNPR"
             ]
+        },
+        {
+            "key": "OC_SLEEP",
+            "label": "OpenController sleep now",
+            "aliases": [
+                "OC_SLP"
+            ]
         }
     ],
     "rgb_matrix": {

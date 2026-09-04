@@ -50,6 +50,11 @@ PB13/`CHWAKE` unused, and derives the 2.4 GHz keyboard identity from the
 CH592F factory MAC. After changing an existing module to this profile, erase
 its old bond and pair it again.
 
+The host side of the link is USART2 on PA2/PA3 with the USART swap (erratum
+4). That is specific to this PCB: the driver is also exercised on a
+NUCLEO-U083RC bench (`handwired/opencontroller_bench`), where PA2/PA3 belong
+to the ST-Link and the link has to use USART1 on PA9/PA10 instead.
+
 Use only the board-qualified `mk65mx-wireless-ch592` artifacts. The original
 OpenController and MK65 profiles currently share OpenBoot image family `0xB2`,
 so the bootloader cannot reject an otherwise-valid image built for the wrong
@@ -63,14 +68,60 @@ The default keymap adds these controls only when `OPENCONTROLLER_ENABLE=yes`:
   pressed.
 * Fn+R (`OC_PAIR`): select 2.4 GHz, erase the existing bond, and pair.
 * Fn+T (`OC_UNPAIR`): erase the bond and return to automatic routing.
+* Fn+Y (`OC_SLEEP`): tear the 2.4 GHz link down and deep-sleep the module now.
 
 Automatic mode uses USB whenever it is enumerated and reconnects the 2.4 GHz
 link after USB is unplugged. Wireless v1 sends boot-keyboard reports only, so
 it is limited to six simultaneous non-modifier keys. Receiver lock-state LEDs
 are supported. NKRO, consumer/media and system keys, mouse reports, raw HID,
-BLE profiles, real battery reporting, deep sleep/wake, and updating the CH592F
-through QMK are not implemented. Those QMK features continue to work over USB.
-The current radio link is not encrypted.
+BLE profiles, real battery reporting, and updating the CH592F through QMK are
+not implemented. Those QMK features continue to work over USB. The current
+radio link is not encrypted.
+
+### Module sleep
+
+With an OpenController build that carries the UART sleep protocol (`main` at
+40bfb45 or later), QMK negotiates it at every boot and after every module
+reset it can observe, and only uses it once the module has answered the
+`A6 56` unlock with `5B 37`. A stock module acknowledges the unlock and stays
+awake; the same QMK build works on both.
+
+* Auto-sleep is armed by default: the module deep-sleeps on its own whenever
+  its radio is idle (USB routing, or no bond) or duty-cycling a bonded search,
+  and stays awake while connected. Define `OPENCONTROLLER_AUTOSLEEP_DISABLE`
+  to leave it off.
+* On the 2.4 GHz transport, `OPENCONTROLLER_SLEEP_TIMEOUT_MS` (default ten
+  minutes, `0` to disable) of no key activity disconnects the link and
+  deep-sleeps the module, as does `OC_SLEEP`. The idle clock restarts on every
+  key and every time the link is asked for, so plugging USB in and out does
+  not put a freshly reconnected module straight back to sleep. Nothing is
+  sent while a key or modifier is still held, and the sleep frame always
+  follows an empty report and its RF-delivery dwell, so a release still on its
+  way reaches the receiver before the link is torn down. Routing and pairing
+  keys cancel a sleep that was requested and deferred.
+* The next key press wakes the module. On the bench the bonded reconnect took
+  76 to 177 ms; a key still held when the link returns is delivered once by
+  the reconnect resync (empty report, then the current one), a tap released
+  before that is lost.
+* The CH592F wakes on a falling edge of its UART RX pin and loses the byte
+  that carried it, so the driver leads the first frame after any silence with
+  a discardable `0x00` and a 5 ms gap. That is transparent to everything that
+  queues frames, the OpenBoot bridge included, and only happens once the
+  capability has been proven.
+* The unlock is boot-scoped on the module and a module reset is invisible to
+  the host, so the driver re-proves it on every link-up (two frames, about
+  3 ms). A module that reset while the link was down is therefore caught at
+  the next connection instead of being left with auto-sleep silently off.
+
+Measured on the NUCLEO-U083RC bench (`handwired/opencontroller_bench`, meter
+on the module supply, OpenController `main` at 40bfb45): 5 to 6 µA asleep,
+about 1 mA awake in RF idle, 7.5 mA connected, 20 of 20 automated sleep/wake
+cycles with one Caps Lock toggle per wake and no ACK timeouts or checksum
+errors. The full ledger is in that keyboard's readme.
+
+End-to-end testing also depends on the OpenDongle side keeping its link up;
+an unrelated, pre-existing OpenDongle drop a few seconds after an initial pair
+can look like a failed wake.
 
 ## Hardware errata (rev B01)
 
