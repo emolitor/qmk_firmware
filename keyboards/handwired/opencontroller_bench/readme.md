@@ -66,7 +66,7 @@ There is one physical key, the B1 USER button, and seven virtual keys that
 
 | Key | Keycode | Purpose |
 |---|---|---|
-| 0 | `KC_F24` | B1 USER or virtual bit 0: a harmless report |
+| 0 | `KC_F24` | B1 USER or virtual bit 0: a harmless report (`KC_F13` in the `oracle` keymap) |
 | 1 | `KC_CAPS` | end-to-end oracle: the host answers with its LED state (`5A` frame) |
 | 2 | `OC_SLEEP` | explicit module sleep |
 | 3 | `OC_PAIR` | fresh 2.4 GHz pairing |
@@ -80,6 +80,48 @@ There is one physical key, the B1 USER button, and seven virtual keys that
     bench.py keys 0x00         release everything
     bench.py mark 3            put a marker in the trace
     bench.py trace --follow    decoded live trace
+    bench.py diag              decode the module's A6 71 counter dump (frame v3)
+
+### The transport is forced to the radio
+
+The firmware selects `CONNECTION_HOST_BLUETOOTH` once at startup. This is not a
+preference, it is a correctness guard for measurement: the driver's default host
+is `AUTO`, and `desired_target()` resolves `AUTO` to the LOCAL USB whenever this
+Nucleo's own user USB is plugged into the machine under test. Keys then leave via
+the Nucleo's own HID interface and never traverse the module at all -- while a
+host-side oracle happily reports every key as delivered. Every reflash resets the
+host to `AUTO`, so this trap re-arms itself silently.
+
+`CONNECTION_HOST_BLUETOOTH` always resolves to the radio with no USB fallback, so
+the dongle is the only keyboard the host can see deliver. `OC_USB` (key 5) still
+works for a deliberate switch. **Before trusting any delivery measurement, check
+that `bench.py status` reports `host BLUETOOTH`.**
+
+### Scheduled (autonomous) tap
+
+`bench.py` drives the board over SWD, which is unavailable while the machine
+under test is asleep -- so a keystroke cannot be injected during host suspend.
+Write `bench_tap_delay_ms` (and optionally `bench_tap_dur_ms`) over SWD and the
+firmware fires the tap itself that many milliseconds later:
+
+    # press key 0 for 100 ms, 25 s from now, with no further host involvement
+    python3 - <<'EOF'
+    import sys; sys.path.insert(0, '.')
+    import bench
+    sym = bench.load_symbols('../../../.build/handwired_opencontroller_bench_oracle.elf')
+    ocd = bench.OpenOCD(bench.DEFAULT_CFG); ocd.connect()
+    ocd.write_byte(sym['bench_tap_dur_ms'], 100)
+    ocd.write_word(sym['bench_tap_delay_ms'], 25000)
+    EOF
+
+### Measuring per-key delivery
+
+The `default` keymap uses `KC_F24` because it does nothing on any desktop -- but
+macOS produces no event for it, so a host event tap cannot see it arrive. Build
+the `oracle` keymap instead (key 0 becomes `KC_F13`, macOS keycode 105, still
+inert on a stock desktop) when the question is whether a key REACHED the host:
+
+    qmk compile -kb handwired/opencontroller_bench -km oracle
 
 The firmware keeps the last 1024 events in RAM: every frame written to the
 UART, every byte received, every driver state change, key changes and marks,

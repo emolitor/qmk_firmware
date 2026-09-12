@@ -19,6 +19,13 @@ volatile bench_status_t bench_status;
 volatile bench_event_t  bench_trace[BENCH_TRACE_CAPACITY];
 volatile uint32_t       bench_trace_head;
 volatile uint8_t        bench_raw_tx[1 + BENCH_RAW_TX_MAX];
+/* Scheduled autonomous tap of key bit 0: bench.py writes bench_tap_delay_ms (and
+ * optionally bench_tap_dur_ms) over SWD; the firmware fires the tap that many ms
+ * later, on its own. Lets a keystroke be injected while the USB host is asleep,
+ * when bench.py (SWD over the host's ST-Link) cannot run. */
+volatile uint32_t       bench_tap_delay_ms;   /* write: arm a tap this many ms from now (0 = idle) */
+volatile uint16_t       bench_tap_dur_ms;     /* hold time; defaults to 100 ms if left 0 */
+static   uint32_t       bench_tap_at;         /* internal: absolute fire time (0 = disarmed) */
 
 static uint32_t last_mark;
 static uint8_t  last_matrix_row;
@@ -146,6 +153,38 @@ static void service_raw_tx(void) {
 void housekeeping_task_kb(void) {
     uint8_t  state[BENCH_EVENT_DATA_SIZE];
     uint32_t mark = bench_mark;
+
+    /* Bench measurement mode: force the 2.4G (dongle) transport at startup.
+     * The driver's default host is AUTO, which resolves to the LOCAL USB whenever
+     * this Nucleo's own user USB is plugged into the host (desired_target() in
+     * opencontroller.c). Keys then go out the Nucleo's own HID (VID 0x1209) and
+     * never traverse the module->dongle path under test -- which silently
+     * invalidates any host-side delivery measurement. CONNECTION_HOST_BLUETOOTH
+     * always resolves to OC_TARGET_2G4 with no USB fallback, so the dongle is the
+     * only keyboard the host can see deliver. Retries until it sticks, then stops
+     * so a deliberate OC_USB selection still works. */
+    static bool bench_forced_2g4;
+    if (!bench_forced_2g4) {
+        if (connection_get_host_raw() == CONNECTION_HOST_BLUETOOTH) {
+            bench_forced_2g4 = true;
+        } else {
+            connection_set_host_noeeprom(CONNECTION_HOST_BLUETOOTH);
+        }
+    }
+
+    if (bench_tap_delay_ms != 0u) {               /* arm: convert delay to an absolute fire time */
+        bench_tap_at = timer_read32() + bench_tap_delay_ms;
+        if (bench_tap_at == 0u) { bench_tap_at = 1u; }
+        bench_tap_delay_ms = 0u;
+    }
+    if (bench_tap_at != 0u) {
+        uint16_t dur = bench_tap_dur_ms ? bench_tap_dur_ms : 100u;
+        int32_t  since = (int32_t)(timer_read32() - bench_tap_at);
+        if (since >= 0) {
+            if (since >= (int32_t)dur) { bench_virtual_keys &= (uint8_t)~1u; bench_tap_at = 0u; }
+            else                       { bench_virtual_keys |= 1u; }
+        }
+    }
 
     if (mark != last_mark) {
         last_mark = mark;
