@@ -702,6 +702,10 @@ void ocp_begin_keyboard_resync(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]) {
     resync_active           = true;
 }
 
+bool ocp_keyboard_report_pending(void) {
+    return keyboard_report_pending;
+}
+
 bool ocp_is_idle(void) {
     return rx_length == 0 && reply_acks_pending == 0 && !inflight.active && action_count == 0 && !resync_active && !keyboard_report_pending && !tx_quiet && !release_dwell && !wake_pending && !sleep_settle;
 }

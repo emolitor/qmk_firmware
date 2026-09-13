@@ -121,6 +121,7 @@ void ocp_set_keyboard_report(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]);
 void ocp_begin_keyboard_resync(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]);
 
 /** True only when no parser reply, transaction, report or guard is pending. */
+bool ocp_keyboard_report_pending(void);
 bool ocp_is_idle(void);
 
 /** True while the fixed reconnect report sequence is still in progress. */

@@ -48,6 +48,24 @@ void opencontroller_trace_rx(uint8_t byte);
 #    define OPENCONTROLLER_SLEEP_TIMEOUT_MS 600000
 #endif
 
+/*
+ * A keyboard report parked on a link the module tore down. After its 3.1 s
+ * connection supervision lapses (dongle unplugged, reset, or out of range
+ * while the link was up) the module reports 0x33, goes RF-idle and
+ * auto-sleeps; it never reconnects by itself ("the host paces the reconnect
+ * with A6 30"), and the protocol layer only sends keyboard reports while
+ * CONNECTED. Nothing re-drove the link, so every key was dropped until the
+ * sleep timeout above put the module to sleep, whose wake path reselects.
+ * Bench: 0/5 keys over 60 s after a 2.5 s dongle outage; the UART trace showed
+ * the matrix events with no TX at all. Re-drive the bonded reconnect while a
+ * report is waiting, once the previous sequence has drained and no faster
+ * than this, so a key-up landing before the module's statuses cannot queue a
+ * second SELECT_USB/SELECT_2G4 pair on top of the link just made.
+ */
+#ifndef OPENCONTROLLER_LINK_REDRIVE_MS
+#    define OPENCONTROLLER_LINK_REDRIVE_MS 500
+#endif
+
 #define OC_COMMAND_SELECT_USB 0x11
 #define OC_COMMAND_SELECT_2G4 0x30
 #define OC_COMMAND_PAIR 0x51
@@ -90,6 +108,7 @@ static uint32_t       operation_retry_deferred_at;
 static bool           sleep_now_requested;  /* OC_SLEEP pressed */
 static bool           sleep_wake_requested; /* a key was pressed while the module sleeps */
 static uint32_t       link_requested_at;    /* last time the 2.4 GHz link was asked for */
+static uint32_t       link_redrive_at;      /* last reconnect driven for a parked report */
 
 /* QMK's generic UART API has no nonblocking transmit operation. Queue an
  * entire protocol frame atomically only when ChibiOS has enough free space;
@@ -706,6 +725,13 @@ void bluetooth_task(void) {
             service_pending_operation();
         }
         if (pending_operation == OC_OPERATION_NONE) {
+            // Latched demand: a parked report on a torn-down link re-drives the
+            // bonded reconnect (see OPENCONTROLLER_LINK_REDRIVE_MS). Only while
+            // the module is awake: the sleep-state machine below owns the wake.
+            if (desired_target() == OC_TARGET_2G4 && selected_target == OC_TARGET_2G4 && !reselect_deferred && ocp_get_link_state() == OCP_LINK_DISCONNECTED && ocp_get_module_sleep_state() == OCP_MODULE_AWAKE && ocp_keyboard_report_pending() && !ocp_actions_pending() && timer_elapsed32(link_redrive_at) >= OPENCONTROLLER_LINK_REDRIVE_MS) {
+                link_redrive_at = timer_read32();
+                selected_target = OC_TARGET_UNKNOWN;
+            }
             sync_target();
             // Not during recovery: a failed transport must keep its backoff
             // instead of being prodded with a sleep negotiation every pass.
