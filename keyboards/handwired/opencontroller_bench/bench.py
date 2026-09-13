@@ -354,11 +354,11 @@ def cmd_diag(ocd, symbols, args):
     if len(frame) >= 2 and frame[1] == 0:
         print("dump refused: the module is connected (it only answers while idle or searching)")
         return
-    if len(frame) < 3 + 85:
+    if len(frame) < 3 + 89:
         print(f"short dump ({len(frame)} bytes): {frame.hex(' ')}")
         return
-    names = ["rf_state", "ll_boot", "pair_bcast", "valid_rx", "entered_connected", "rf_config", "pair_rx_off", "wfi", "sleep_attempt", "sleep_entered", "sleep_aborted", "wake_gpio", "wake_rtc", "last_abort", "cfg_status", "rx_status", "tx_status", "ll_drop", "boot_reset", "fault_marker", "mepc", "mcause", "mtval", "loop_passes", "loop_stage", "ll_hid_rx", "ll_hid_tx", "ll_hid_rx_down", "ll_hid_tx_down", "ll_hid_tx_done_down"]
-    values = struct.unpack_from("<B7I5HBBBBIBBIIIHB5I", frame, 3)
+    names = ["rf_state", "ll_boot", "pair_bcast", "valid_rx", "entered_connected", "rf_config", "pair_rx_off", "wfi", "sleep_attempt", "sleep_entered", "sleep_aborted", "wake_gpio", "wake_rtc", "last_abort", "cfg_status", "rx_status", "tx_status", "ll_drop", "boot_reset", "fault_marker", "mepc", "mcause", "mtval", "loop_passes", "loop_stage", "ll_hid_rx", "ll_hid_tx", "ll_hid_rx_down", "ll_hid_tx_down", "ll_hid_tx_done_down", "ll_hid_fifo_drop"]
+    values = struct.unpack_from("<B7I5HBBBBIBBIIIHB6I", frame, 3)
     for name, value in zip(names, values):
         if name == "last_abort":
             value = f"{value} ({DIAG_ABORT.get(value, '?')})"
