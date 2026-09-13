@@ -172,7 +172,14 @@ void housekeeping_task_kb(void) {
         }
     }
 
-    if (bench_tap_delay_ms != 0u) {               /* arm: convert delay to an absolute fire time */
+    /* Arm: convert the delay to an absolute fire time -- but only once any tap
+     * already in flight has released. Consuming the request while a key was
+     * still pressed replaced its fire time, so the release never happened and
+     * the next press was a no-op (bench 2026-09-13: 11 keys lost in one
+     * workload run). The request stays pending in bench_tap_delay_ms until
+     * then, so the host can read it back and no press or release is dropped;
+     * the second tap fires delay ms after the first releases. */
+    if (bench_tap_delay_ms != 0u && bench_tap_at == 0u) {
         bench_tap_at = timer_read32() + bench_tap_delay_ms;
         if (bench_tap_at == 0u) { bench_tap_at = 1u; }
         bench_tap_delay_ms = 0u;

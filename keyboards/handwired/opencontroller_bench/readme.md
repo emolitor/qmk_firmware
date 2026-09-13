@@ -102,7 +102,9 @@ that `bench.py status` reports `host BLUETOOTH`.**
 `bench.py` drives the board over SWD, which is unavailable while the machine
 under test is asleep -- so a keystroke cannot be injected during host suspend.
 Write `bench_tap_delay_ms` (and optionally `bench_tap_dur_ms`) over SWD and the
-firmware fires the tap itself that many milliseconds later:
+firmware fires the tap itself that many milliseconds later: A request written while a scheduled tap is still pressed waits for that tap's
+release and then fires `delay` ms later; nothing is dropped, but the second tap lands later
+than asked, so keep arms at least `delay + duration` apart when timing matters.
 
     # press key 0 for 100 ms, 25 s from now, with no further host involvement
     python3 - <<'EOF'
