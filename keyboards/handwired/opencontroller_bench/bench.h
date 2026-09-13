@@ -65,8 +65,7 @@ typedef struct {
     uint8_t           virtual_keys;
     uint8_t           matrix_row;
     uint8_t           reserved;
-    ocp_diagnostics_t diagnostics;
-    uint16_t          pad;
+    ocp_diagnostics_t diagnostics; /* 8 x u16: ends on the 4-byte boundary seq sits on (offset 32) */
     uint32_t          seq; /* bumped twice per change (odd while being rewritten); read, dump, read */
 } bench_status_t;
 

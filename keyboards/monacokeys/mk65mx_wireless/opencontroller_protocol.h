@@ -68,6 +68,7 @@ typedef struct {
     uint16_t tx_ack_timeouts;
     uint16_t control_queue_overflows;
     uint16_t wake_preambles;
+    uint16_t keyboard_queue_coalesced; /* full report queue: the newest slot absorbed a state (a transition lost, the final state kept) */
 } ocp_diagnostics_t;
 
 /**
@@ -112,20 +113,35 @@ uint8_t ocp_queue_available(void);
 bool ocp_actions_pending(void);
 
 /**
- * Replace the pending 6KRO boot-keyboard report. Only the newest report is
- * retained while an earlier frame is awaiting its ACK.
+ * Queue a 6KRO boot-keyboard report. Reports go out in order while the link
+ * is CONNECTED or RECONNECTING (the module's FIFO holds them until the radio
+ * link is up). A report identical to the newest queued or sent state is not a
+ * transition and is dropped; when the queue is full the newest slot absorbs
+ * the new state, so the host still ends where the matrix is.
  */
+#define OCP_KEYBOARD_QUEUE_CAPACITY 16
 void ocp_set_keyboard_report(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]);
 
-/** Queue an ACK-driven empty-then-current keyboard state resync. */
+/**
+ * After a reconnect: queue one report of the current matrix state unless a
+ * report has been queued or sent since the link went down (those already carry
+ * the state). Re-presses a key held across the outage exactly once.
+ */
 void ocp_begin_keyboard_resync(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]);
 
+/*
+ * Delivery guarantee: every queued transition goes out in order and is
+ * retired when the UART accepts it; the in-flight copy is retried up to
+ * OCP_TX_MAX_ATTEMPTS and then abandoned by the transaction abort (the
+ * module was unresponsive; the link is reset and the resync re-asserts the
+ * current state on reconnect). A press whose in-flight copy is abandoned is
+ * therefore lost -- the same policy as before, now applying to one queued
+ * report instead of the only one.
+ */
+bool    ocp_keyboard_report_pending(void);
+uint8_t ocp_keyboard_queue_count(void);
 /** True only when no parser reply, transaction, report or guard is pending. */
-bool ocp_keyboard_report_pending(void);
 bool ocp_is_idle(void);
-
-/** True while the fixed reconnect report sequence is still in progress. */
-bool ocp_resync_is_active(void);
 
 /** Consume the notification raised when a transaction exhausts its attempts. */
 bool ocp_take_tx_failure(void);

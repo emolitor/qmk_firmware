@@ -119,14 +119,14 @@ static void refresh_status(void) {
     next.matrix_row            = last_matrix_row;
     memcpy(&next.diagnostics, diagnostics, sizeof(*diagnostics));
 
-    if (memcmp((const void *)&bench_status, &next, offsetof(bench_status_t, pad)) == 0) {
+    if (memcmp((const void *)&bench_status, &next, offsetof(bench_status_t, seq)) == 0) {
         return;
     }
     next.t_ms = timer_read32();
 
     ++bench_status.seq; // odd: rewrite in progress
     __sync_synchronize();
-    memcpy((void *)&bench_status, &next, offsetof(bench_status_t, pad));
+    memcpy((void *)&bench_status, &next, offsetof(bench_status_t, seq));
     __sync_synchronize();
     ++bench_status.seq; // even: consistent
 }

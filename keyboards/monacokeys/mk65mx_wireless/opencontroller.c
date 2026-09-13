@@ -467,7 +467,7 @@ static void service_sleep(void) {
     if (has_anykey() || has_anymod()) {
         return;
     }
-    if (ocp_actions_pending() || ocp_resync_is_active() || ocp_queue_available() < 2) {
+    if (ocp_actions_pending() || ocp_keyboard_report_pending() || ocp_queue_available() < 2) {
         return;
     }
     if (ocp_queue_sleep_now()) {
@@ -725,10 +725,14 @@ void bluetooth_task(void) {
             service_pending_operation();
         }
         if (pending_operation == OC_OPERATION_NONE) {
-            // Latched demand: a parked report on a torn-down link re-drives the
-            // bonded reconnect (see OPENCONTROLLER_LINK_REDRIVE_MS). Only while
-            // the module is awake: the sleep-state machine below owns the wake.
-            if (desired_target() == OC_TARGET_2G4 && selected_target == OC_TARGET_2G4 && !reselect_deferred && ocp_get_link_state() == OCP_LINK_DISCONNECTED && ocp_get_module_sleep_state() == OCP_MODULE_AWAKE && ocp_keyboard_report_pending() && !ocp_actions_pending() && timer_elapsed32(link_redrive_at) >= OPENCONTROLLER_LINK_REDRIVE_MS) {
+            // Latched demand: a queued report on a torn-down link, or keys the
+            // matrix still holds (the host released them when the link lapsed;
+            // a held key produces no report of its own, so it would otherwise
+            // stay released until the next transition), re-drives the bonded
+            // reconnect (see OPENCONTROLLER_LINK_REDRIVE_MS); the connect-time
+            // resync then re-asserts the held state. Only while the module is
+            // awake: the sleep-state machine below owns the wake.
+            if (desired_target() == OC_TARGET_2G4 && selected_target == OC_TARGET_2G4 && !reselect_deferred && ocp_get_link_state() == OCP_LINK_DISCONNECTED && ocp_get_module_sleep_state() == OCP_MODULE_AWAKE && (ocp_keyboard_report_pending() || has_anykey() || has_anymod()) && !ocp_actions_pending() && timer_elapsed32(link_redrive_at) >= OPENCONTROLLER_LINK_REDRIVE_MS) {
                 link_redrive_at = timer_read32();
                 selected_target = OC_TARGET_UNKNOWN;
             }

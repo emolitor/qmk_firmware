@@ -194,34 +194,236 @@ TEST_F(OpenControllerProtocol, DestructiveBarrierSequenceEnqueueIsAtomic) {
     EXPECT_EQ(capture.frames[6], (Frame{0xA1, 0, 0, 0, 0, 0, 0, 0, 0, 0xA1}));
 }
 
-TEST_F(OpenControllerProtocol, ReconnectResyncReleasesThenAssertsOnceAndHoldsTheLiveReport) {
+namespace {
+Frame report_of(const Frame &frame) {
+    return Frame(frame.begin() + 1, frame.begin() + 1 + OCP_KEYBOARD_REPORT_SIZE);
+}
+} // namespace
+
+TEST_F(OpenControllerProtocol, KeyboardReportsQueueInOrderAndRepeatsAreNotTransitions) {
     Capture                                             capture;
-    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> snapshot = {0x02, 0, 0x04, 0, 0, 0, 0, 0};
-    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> live     = {0x02, 0, 0x05, 0, 0, 0, 0, 0};
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> a     = {0, 0, 0x04, 0, 0, 0, 0, 0};
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> ab    = {0, 0, 0x04, 0x05, 0, 0, 0, 0};
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> empty = {0};
 
     feed_status(0x32, 0);
     ocp_service(0, capture_send, &capture); // ACK the status frame.
-    ocp_begin_keyboard_resync(snapshot.data());
-    ocp_set_keyboard_report(live.data());
+    capture.frames.clear();
 
+    ocp_set_keyboard_report(a.data());
+    ocp_set_keyboard_report(a.data());  // the same state again: not a transition
+    ocp_set_keyboard_report(ab.data());
+    ocp_set_keyboard_report(empty.data());
+    EXPECT_EQ(ocp_keyboard_queue_count(), 3U);
+
+    for (uint32_t t = 1; t <= 3; ++t) {
+        ocp_service(t, capture_send, &capture);
+        feed_ack(t);
+    }
+    ocp_service(4, capture_send, &capture);
+
+    // Every transition, in order, each waiting for the previous ACK.
+    ASSERT_EQ(capture.frames.size(), 3U);
+    EXPECT_EQ(report_of(capture.frames[0]), Frame(a.begin(), a.end()));
+    EXPECT_EQ(report_of(capture.frames[1]), Frame(ab.begin(), ab.end()));
+    EXPECT_EQ(report_of(capture.frames[2]), Frame(empty.begin(), empty.end()));
+    EXPECT_EQ(ocp_keyboard_queue_count(), 0U);
+    EXPECT_TRUE(ocp_is_idle());
+}
+
+TEST_F(OpenControllerProtocol, ATapDuringTheReconnectKeepsBothItsPressAndItsRelease) {
+    Capture                                             capture;
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> down  = {0, 0, 0x04, 0, 0, 0, 0, 0};
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> empty = {0};
+
+    feed_status(0x33, 0); // the module tore the link down
+    ocp_service(0, capture_send, &capture);
+    capture.frames.clear();
+
+    ocp_set_keyboard_report(down.data());  // press and release while the link is down:
+    ocp_set_keyboard_report(empty.data()); // the single slot used to keep only the release
     ocp_service(1, capture_send, &capture);
-    feed_ack(2);
+    EXPECT_TRUE(capture.frames.empty()); // nothing goes out while DISCONNECTED
+    EXPECT_EQ(ocp_keyboard_queue_count(), 2U);
+
+    feed_status(0x35, 2); // RECONNECTING: the module's FIFO takes reports now
     ocp_service(2, capture_send, &capture);
+    capture.frames.clear();
+    ocp_service(3, capture_send, &capture);
     feed_ack(3);
+    ocp_service(4, capture_send, &capture);
+
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(report_of(capture.frames[0]), Frame(down.begin(), down.end()));
+    EXPECT_EQ(report_of(capture.frames[1]), Frame(empty.begin(), empty.end()));
+}
+
+TEST_F(OpenControllerProtocol, ReconnectResyncResendsTheHeldStateOnceWhenNothingWasQueued) {
+    Capture                                             capture;
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> held = {0x02, 0, 0x04, 0, 0, 0, 0, 0};
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> live = {0x02, 0, 0x05, 0, 0, 0, 0, 0};
+
+    feed_status(0x32, 0);
+    ocp_service(0, capture_send, &capture);
+    ocp_set_keyboard_report(held.data()); // held since before the outage
+    ocp_service(1, capture_send, &capture);
+    feed_ack(1);
+    feed_status(0x33, 2); // outage: the dongle released every key on the host
+    ocp_service(2, capture_send, &capture);
+    feed_status(0x32, 3); // back
+    ocp_service(3, capture_send, &capture);
+    capture.frames.clear();
+
+    ocp_begin_keyboard_resync(held.data()); // the matrix still holds it
+    ocp_set_keyboard_report(live.data());
+    ocp_service(4, capture_send, &capture);
+    feed_ack(4);
+    ocp_service(5, capture_send, &capture);
+    feed_ack(5);
+    ocp_service(6, capture_send, &capture);
+
+    // The held state exactly once (a repeat of the newest state would otherwise
+    // be dropped), then the live report; no empty report in between.
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(report_of(capture.frames[0]), Frame(held.begin(), held.end()));
+    EXPECT_EQ(report_of(capture.frames[1]), Frame(live.begin(), live.end()));
+}
+
+TEST_F(OpenControllerProtocol, ReconnectResyncAddsNoSecondReportWhenTheQueuedTransitionCarriesTheState) {
+    Capture                                             capture;
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> down = {0, 0, 0x04, 0, 0, 0, 0, 0};
+
+    feed_status(0x33, 0);
+    ocp_service(0, capture_send, &capture);
+    ocp_set_keyboard_report(down.data()); // pressed during the outage, still held
+    feed_status(0x32, 1);
+    ocp_service(1, capture_send, &capture);
+    capture.frames.clear();
+
+    ocp_begin_keyboard_resync(down.data());
+    EXPECT_EQ(ocp_keyboard_queue_count(), 1U); // nothing added: the queued press carries the state
+    ocp_service(2, capture_send, &capture);
+    feed_ack(2);
     ocp_service(3, capture_send, &capture);
 
-    // Empty, then the snapshot exactly once: a key held across the reconnect
-    // is not typed twice. The live report waits until the sequence is done.
-    ASSERT_EQ(capture.frames.size(), 4U);
-    EXPECT_EQ(capture.frames[0], (Frame{0x61, 0x0D, 0x0A}));
-    EXPECT_EQ(Frame(capture.frames[1].begin() + 1, capture.frames[1].begin() + 9), Frame(OCP_KEYBOARD_REPORT_SIZE, 0));
-    EXPECT_EQ(Frame(capture.frames[2].begin() + 1, capture.frames[2].begin() + 9), Frame(snapshot.begin(), snapshot.end()));
-    EXPECT_EQ(Frame(capture.frames[3].begin() + 1, capture.frames[3].begin() + 9), Frame(live.begin(), live.end()));
-    EXPECT_FALSE(ocp_resync_is_active());
+    ASSERT_EQ(capture.frames.size(), 1U); // one report on the wire, not a second assertion of the same state
+    EXPECT_EQ(report_of(capture.frames[0]), Frame(down.begin(), down.end()));
+}
 
-    feed_ack(4);
-    ocp_service(25, capture_send, &capture);
-    EXPECT_TRUE(ocp_is_idle());
+/* A session forming after a module reboot is announced as 0x34 then 0x35 with
+ * no 0x33: either status alone must invalidate what was sent, so they are
+ * tested separately (codex). */
+class ModuleRebootStatus : public OpenControllerProtocol, public testing::WithParamInterface<uint8_t> {};
+
+TEST_P(ModuleRebootStatus, AModuleRebootWithoutADisconnectStillGetsTheResync) {
+    Capture                                             capture;
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> held = {0, 0, 0x04, 0, 0, 0, 0, 0};
+
+    feed_status(0x32, 0);
+    ocp_service(0, capture_send, &capture);
+    ocp_set_keyboard_report(held.data());
+    ocp_service(1, capture_send, &capture);
+    feed_ack(1); // the held key reached the module: sent-since-link-loss is set
+
+    feed_status(GetParam(), 2); // the module rebooted straight into a forming session
+    ocp_service(2, capture_send, &capture);
+    feed_status(0x32, 3);
+    ocp_service(3, capture_send, &capture);
+    capture.frames.clear();
+
+    ocp_begin_keyboard_resync(held.data());
+    ocp_service(4, capture_send, &capture);
+
+    // The dongle released the key and the module's FIFO is gone: re-assert.
+    ASSERT_EQ(capture.frames.size(), 1U);
+    EXPECT_EQ(report_of(capture.frames[0]), Frame(held.begin(), held.end()));
+}
+
+INSTANTIATE_TEST_SUITE_P(TransportSelectedOrReconnecting, ModuleRebootStatus, testing::Values(0x34, 0x35));
+
+TEST_F(OpenControllerProtocol, TheResyncComparesTheSnapshotBeforeSuppressingIt) {
+    Capture                                             capture;
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> a = {0, 0, 0x04, 0, 0, 0, 0, 0};
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> b = {0, 0, 0x05, 0, 0, 0, 0, 0};
+
+    feed_status(0x33, 0); // link down; a transition is queued but cannot drain
+    ocp_service(0, capture_send, &capture);
+    ocp_set_keyboard_report(a.data());
+    ASSERT_EQ(ocp_keyboard_queue_count(), 1U);
+
+    // The matrix moved on without this queue seeing it (AUTO sent those
+    // reports to USB): the snapshot no longer matches what is queued, so the
+    // resync must queue it rather than trust the queue to carry the state.
+    ocp_begin_keyboard_resync(b.data());
+    EXPECT_EQ(ocp_keyboard_queue_count(), 2U);
+
+    feed_status(0x32, 1);
+    ocp_service(1, capture_send, &capture);
+    capture.frames.clear();
+    for (uint32_t t = 2; t <= 3; ++t) {
+        ocp_service(t, capture_send, &capture);
+        feed_ack(t);
+    }
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(report_of(capture.frames[1]), Frame(b.begin(), b.end()));
+}
+
+TEST_F(OpenControllerProtocol, AReleaseBarrierDoesNotSwallowARealReleaseQueuedBesideIt) {
+    Capture                                             capture;
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> down  = {0, 0, 0x04, 0, 0, 0, 0, 0};
+    const std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> empty = {0};
+    const uint8_t                                       controls[] = {0x11, 0x30};
+
+    feed_status(0x33, 0); // torn down; a tap arrives and the driver re-drives the link
+    ocp_service(0, capture_send, &capture);
+    capture.frames.clear();
+    ocp_set_keyboard_report(down.data());
+    ASSERT_TRUE(ocp_queue_release_then_controls(controls, sizeof(controls)));
+    ocp_service(1, capture_send, &capture); // the barrier goes out ...
+    ocp_set_keyboard_report(empty.data());  // ... in the same millisecond the tap's release arrives
+    feed_ack(1);
+    ocp_service(15, capture_send, &capture);
+    feed_ack(15);
+    ocp_service(16, capture_send, &capture);
+    feed_ack(16);
+    feed_status(0x35, 17);
+    ocp_service(17, capture_send, &capture);
+    capture.frames.clear();
+    for (uint32_t t = 18; t <= 20; ++t) {
+        ocp_service(t, capture_send, &capture);
+        feed_ack(t);
+    }
+
+    // Both the press and the release are still delivered, in order: the
+    // barrier is not a matrix transition and must not hide the real release.
+    ASSERT_EQ(capture.frames.size(), 2U);
+    EXPECT_EQ(report_of(capture.frames[0]), Frame(down.begin(), down.end()));
+    EXPECT_EQ(report_of(capture.frames[1]), Frame(empty.begin(), empty.end()));
+}
+
+TEST_F(OpenControllerProtocol, AFullKeyboardQueueKeepsTheFinalState) {
+    std::array<uint8_t, OCP_KEYBOARD_REPORT_SIZE> state = {0};
+    Capture                                       capture;
+
+    feed_status(0x33, 0); // nothing drains while the link is down
+    ocp_service(0, capture_send, &capture);
+    for (uint8_t k = 1; k <= OCP_KEYBOARD_QUEUE_CAPACITY + 3; ++k) {
+        state[2] = k;
+        ocp_set_keyboard_report(state.data());
+    }
+    EXPECT_EQ(ocp_keyboard_queue_count(), OCP_KEYBOARD_QUEUE_CAPACITY);
+    EXPECT_EQ(ocp_get_diagnostics()->keyboard_queue_coalesced, 3U);
+
+    // Drain it: the last report carries the final matrix state.
+    feed_status(0x32, 1);
+    ocp_service(1, capture_send, &capture);
+    capture.frames.clear();
+    for (uint32_t t = 2; t < 2 + OCP_KEYBOARD_QUEUE_CAPACITY; ++t) {
+        ocp_service(t, capture_send, &capture);
+        feed_ack(t);
+    }
+    ASSERT_EQ(capture.frames.size(), static_cast<size_t>(OCP_KEYBOARD_QUEUE_CAPACITY));
+    EXPECT_EQ(report_of(capture.frames.back())[2], OCP_KEYBOARD_QUEUE_CAPACITY + 3);
 }
 
 TEST_F(OpenControllerProtocol, RejectedTransportDoesNotSendPendingKeyboardReports) {

@@ -21,6 +21,7 @@
 #define OCP_STATUS_PAIRING 0x31
 #define OCP_STATUS_CONNECTED 0x32
 #define OCP_STATUS_DISCONNECTED 0x33
+#define OCP_STATUS_TRANSPORT_SELECTED 0x34
 #define OCP_STATUS_RECONNECTING 0x35
 #define OCP_STATUS_REJECTED 0x36
 /* The only reply that proves the sleep protocol; a stock module never sends it. */
@@ -73,7 +74,6 @@ typedef enum {
     OCP_TX_NONE,
     OCP_TX_CONTROL,
     OCP_TX_KEYBOARD,
-    OCP_TX_RESYNC,
     OCP_TX_RELEASE,
 } ocp_tx_kind_t;
 
@@ -105,11 +105,22 @@ static uint8_t      action_head;
 static uint8_t      action_tail;
 static uint8_t      action_count;
 
-static uint8_t keyboard_report[OCP_KEYBOARD_REPORT_SIZE];
-static bool    keyboard_report_pending;
-static uint8_t resync_report[OCP_KEYBOARD_REPORT_SIZE];
-static uint8_t resync_phase;
-static bool    resync_active;
+/* In-order boot-keyboard report queue. One slot used to hold only the newest
+ * report, so a press whose release arrived before the link was back up
+ * (a tap during a reconnect) left only the release to send: the press was
+ * lost. Reports now queue in order and go out while the link is CONNECTED
+ * or RECONNECTING -- the module's own ack-retired FIFO holds them until the
+ * radio link is up -- so every transition reaches the host in sequence.
+ * Full-state reports make the queue robust to a full ring: the newest slot
+ * absorbs the new state (an intermediate transition is lost, the final state
+ * is not), as the module's FIFO does. */
+static uint8_t kbd_queue[OCP_KEYBOARD_QUEUE_CAPACITY][OCP_KEYBOARD_REPORT_SIZE];
+static uint8_t kbd_head;  /* next free slot */
+static uint8_t kbd_tail;  /* oldest queued report, the next to send */
+static uint8_t kbd_count;
+static uint8_t kbd_newest[OCP_KEYBOARD_REPORT_SIZE]; /* newest state queued or sent: repeats of it are not transitions */
+static bool    kbd_newest_valid;
+static bool    kbd_sent_since_link_loss; /* a report has gone out since the link last went down */
 
 static uint8_t        reply_acks_pending;
 static ocp_inflight_t inflight;
@@ -219,13 +230,22 @@ static void handle_status(uint8_t status) {
             }
             break;
         case OCP_STATUS_DISCONNECTED:
-            link_state = OCP_LINK_DISCONNECTED;
+            link_state               = OCP_LINK_DISCONNECTED;
+            kbd_sent_since_link_loss = false;
+            break;
+        case OCP_STATUS_TRANSPORT_SELECTED:
+            // A session is forming: the module may have rebooted straight into
+            // 0x34/0x35 (its FIFO gone, the dongle's keys released) without a
+            // 0x33, so what was sent before no longer describes the host.
+            kbd_sent_since_link_loss = false;
             break;
         case OCP_STATUS_RECONNECTING:
-            link_state = OCP_LINK_RECONNECTING;
+            link_state               = OCP_LINK_RECONNECTING;
+            kbd_sent_since_link_loss = false;
             break;
         case OCP_STATUS_REJECTED:
-            link_state = OCP_LINK_REJECTED;
+            link_state               = OCP_LINK_REJECTED;
+            kbd_sent_since_link_loss = false;
             break;
         case OCP_STATUS_SLEEP_READY:
             // Accepted whenever it arrives: a module that volunteers it is capable.
@@ -259,8 +279,9 @@ static void control_acked(uint8_t subcommand, uint32_t now_ms) {
             sleep_settle            = true;
             sleep_settle_started_at = now_ms;
             // The module tears the link down without announcing it.
-            link_state  = OCP_LINK_DISCONNECTED;
-            last_status = OCP_STATUS_DISCONNECTED;
+            link_state               = OCP_LINK_DISCONNECTED;
+            last_status              = OCP_STATUS_DISCONNECTED;
+            kbd_sent_since_link_loss = false;
             break;
         case OCP_CONTROL_PAIR:
         case OCP_CONTROL_UNPAIR:
@@ -275,13 +296,7 @@ static void dispatch_rx_frame(uint32_t now_ms) {
     switch (rx_buffer[0]) {
         case OCP_HEADER_ACK:
             if (inflight.active) {
-                if (inflight.kind == OCP_TX_RESYNC) {
-                    if (resync_phase < 1) {
-                        ++resync_phase;
-                    } else {
-                        resync_active = false;
-                    }
-                } else if (inflight.kind == OCP_TX_RELEASE) {
+                if (inflight.kind == OCP_TX_RELEASE) {
                     release_dwell            = true;
                     release_dwell_started_at = now_ms;
                 } else if (inflight.kind == OCP_TX_CONTROL) {
@@ -433,13 +448,12 @@ static void abort_transaction(uint32_t now_ms) {
 
     reply_acks_pending = 0;
     reset_rx_parser();
-    resync_active = false;
-    resync_phase  = 0;
     release_dwell = false;
     reset_sleep_state();
 
-    link_state  = OCP_LINK_DISCONNECTED;
-    last_status = OCP_STATUS_DISCONNECTED;
+    link_state               = OCP_LINK_DISCONNECTED;
+    last_status              = OCP_STATUS_DISCONNECTED;
+    kbd_sent_since_link_loss = false;
 
     tx_quiet            = true;
     tx_quiet_started_at = now_ms;
@@ -487,20 +501,20 @@ static bool service_keyboard(const uint8_t *report, ocp_tx_kind_t kind, uint32_t
     frame[OCP_TX_FRAME_MAX_SIZE - 1] = checksum(frame, OCP_TX_FRAME_MAX_SIZE - 1);
 
     sent = send_frame(frame, sizeof(frame), kind, now_ms, send, context);
+    // The release barrier (OCP_TX_RELEASE) deliberately leaves kbd_newest
+    // alone: it tracks MATRIX transitions. Treating the barrier as "nothing
+    // held" made a real release that landed in the same millisecond look like
+    // a repeat and dropped it -- a stuck key on the bench (2026-09-13). A key
+    // the barrier released while the matrix still holds it is re-asserted by
+    // the reconnect resync, not by the queue.
     if (sent && kind == OCP_TX_KEYBOARD) {
-        keyboard_report_pending = false;
+        // Retired from the queue once handed to the UART: the in-flight copy
+        // carries the retries, exactly as the single slot did.
+        kbd_tail = (uint8_t)((kbd_tail + 1) % OCP_KEYBOARD_QUEUE_CAPACITY);
+        --kbd_count;
+        kbd_sent_since_link_loss = true;
     }
     return sent;
-}
-
-/* Empty first, then the current state: whatever the receiver still held from
- * before the link went down is released, and a key held across the reconnect
- * (the key that woke the module, typically) reaches the host exactly once. */
-static void service_resync(uint32_t now_ms, ocp_send_callback_t send, void *context) {
-    static const uint8_t empty_report[OCP_KEYBOARD_REPORT_SIZE] = {0};
-    const uint8_t       *report                                 = resync_phase == 0 ? empty_report : resync_report;
-
-    service_keyboard(report, OCP_TX_RESYNC, now_ms, send, context);
 }
 
 static void service_action(uint32_t now_ms, ocp_send_callback_t send, void *context) {
@@ -530,11 +544,13 @@ void ocp_init(void) {
     action_tail  = 0;
     action_count = 0;
 
-    memset(keyboard_report, 0, sizeof(keyboard_report));
-    keyboard_report_pending = false;
-    memset(resync_report, 0, sizeof(resync_report));
-    resync_phase  = 0;
-    resync_active = false;
+    memset(kbd_queue, 0, sizeof(kbd_queue));
+    kbd_head  = 0;
+    kbd_tail  = 0;
+    kbd_count = 0;
+    memset(kbd_newest, 0, sizeof(kbd_newest));
+    kbd_newest_valid         = false;
+    kbd_sent_since_link_loss = false;
 
     reply_acks_pending = 0;
     memset(&inflight, 0, sizeof(inflight));
@@ -623,10 +639,11 @@ void ocp_service(uint32_t now_ms, ocp_send_callback_t send, void *context) {
 
     if (action_count != 0) {
         service_action(now_ms, send, context);
-    } else if (link_state == OCP_LINK_CONNECTED && resync_active) {
-        service_resync(now_ms, send, context);
-    } else if (link_state == OCP_LINK_CONNECTED && keyboard_report_pending) {
-        service_keyboard(keyboard_report, OCP_TX_KEYBOARD, now_ms, send, context);
+    } else if ((link_state == OCP_LINK_CONNECTED || link_state == OCP_LINK_RECONNECTING) && kbd_count != 0) {
+        // RECONNECTING too: the module queues reports in its ack-retired FIFO
+        // until the radio link is up, so a key typed during the reconnect is
+        // delivered in order instead of being overwritten by its own release.
+        service_keyboard(kbd_queue[kbd_tail], OCP_TX_KEYBOARD, now_ms, send, context);
     }
 }
 
@@ -680,38 +697,67 @@ bool ocp_actions_pending(void) {
     return action_count != 0 || action_inflight || release_dwell;
 }
 
-void ocp_set_keyboard_report(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]) {
-    if (report == NULL) {
-        memset(keyboard_report, 0, sizeof(keyboard_report));
+static void kbd_enqueue(const uint8_t state[OCP_KEYBOARD_REPORT_SIZE]) {
+    if (kbd_count == OCP_KEYBOARD_QUEUE_CAPACITY) {
+        // Full: the newest slot absorbs the state. Reports are full key
+        // state, so the host still ends where the matrix is.
+        uint8_t newest = (uint8_t)((kbd_head + OCP_KEYBOARD_QUEUE_CAPACITY - 1) % OCP_KEYBOARD_QUEUE_CAPACITY);
+        memcpy(kbd_queue[newest], state, OCP_KEYBOARD_REPORT_SIZE);
+        ++diagnostics.keyboard_queue_coalesced;
     } else {
-        memcpy(keyboard_report, report, sizeof(keyboard_report));
+        memcpy(kbd_queue[kbd_head], state, OCP_KEYBOARD_REPORT_SIZE);
+        kbd_head = (uint8_t)((kbd_head + 1) % OCP_KEYBOARD_QUEUE_CAPACITY);
+        ++kbd_count;
     }
-    keyboard_report_pending = true;
+    memcpy(kbd_newest, state, OCP_KEYBOARD_REPORT_SIZE);
+    kbd_newest_valid = true;
+}
+
+void ocp_set_keyboard_report(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]) {
+    uint8_t state[OCP_KEYBOARD_REPORT_SIZE] = {0};
+
+    if (report != NULL) {
+        memcpy(state, report, sizeof(state));
+    }
+    if (kbd_newest_valid && memcmp(state, kbd_newest, sizeof(state)) == 0) {
+        return; // not a transition
+    }
+    kbd_enqueue(state);
 }
 
 void ocp_begin_keyboard_resync(const uint8_t report[OCP_KEYBOARD_REPORT_SIZE]) {
-    if (report == NULL) {
-        memset(resync_report, 0, sizeof(resync_report));
-    } else {
-        memcpy(resync_report, report, sizeof(resync_report));
-    }
+    uint8_t state[OCP_KEYBOARD_REPORT_SIZE] = {0};
 
-    memcpy(keyboard_report, resync_report, sizeof(keyboard_report));
-    keyboard_report_pending = false;
-    resync_phase            = 0;
-    resync_active           = true;
+    if (report != NULL) {
+        memcpy(state, report, sizeof(state));
+    }
+    // The dongle releases every key on the host when the link lapses, and
+    // reports are full key state, so one report of the current matrix is the
+    // whole resync: it re-presses a key held across the outage and clears
+    // anything stale. Skip it only when the state it would assert is exactly
+    // what has already been queued or sent since the link went down -- those
+    // transitions carry it, and repeating it would type a held key twice.
+    // A snapshot that DIFFERS is still a transition and must be queued: the
+    // matrix can move without this queue seeing it (AUTO routing reports to
+    // USB while the 2.4 GHz link is down), so "something was sent" does not
+    // imply "the host has this state" (codex).
+    if ((kbd_sent_since_link_loss || kbd_count != 0) && kbd_newest_valid
+        && memcmp(state, kbd_newest, sizeof(state)) == 0) {
+        return;
+    }
+    kbd_enqueue(state); // deliberately not deduplicated: the host no longer holds it
 }
 
 bool ocp_keyboard_report_pending(void) {
-    return keyboard_report_pending;
+    return kbd_count != 0;
+}
+
+uint8_t ocp_keyboard_queue_count(void) {
+    return kbd_count;
 }
 
 bool ocp_is_idle(void) {
-    return rx_length == 0 && reply_acks_pending == 0 && !inflight.active && action_count == 0 && !resync_active && !keyboard_report_pending && !tx_quiet && !release_dwell && !wake_pending && !sleep_settle;
-}
-
-bool ocp_resync_is_active(void) {
-    return resync_active;
+    return rx_length == 0 && reply_acks_pending == 0 && !inflight.active && action_count == 0 && kbd_count == 0 && !tx_quiet && !release_dwell && !wake_pending && !sleep_settle;
 }
 
 bool ocp_take_tx_failure(void) {

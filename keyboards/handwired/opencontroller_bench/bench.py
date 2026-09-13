@@ -53,7 +53,7 @@ AUTOSLEEP = ["OFF", "ARMING", "ARMED"]
 MODULE = ["AWAKE", "SLEEP_REQUESTED", "ASLEEP"]
 LINK = ["UNKNOWN", "PAIRING", "CONNECTED", "DISCONNECTED", "RECONNECTING", "REJECTED"]
 HOST = ["AUTO", "NONE", "USB", "BLUETOOTH", "2P4GHZ"]  # connection_host_t order
-DIAG_FIELDS = ["rx_checksum_errors", "rx_partial_timeouts", "rx_ack_overflows", "rx_spurious_acks", "tx_ack_timeouts", "control_queue_overflows", "wake_preambles"]
+DIAG_FIELDS = ["rx_checksum_errors", "rx_partial_timeouts", "rx_ack_overflows", "rx_spurious_acks", "tx_ack_timeouts", "control_queue_overflows", "wake_preambles", "keyboard_queue_coalesced"]
 
 CONTROL_NAMES = {
     0x11: "SELECT_USB",
@@ -192,7 +192,7 @@ def read_status(ocd, symbols):
 
 def decode_status(raw):
     t_ms, cap, auto, module, link, gen, leds, last, host, vkeys, row, _res = struct.unpack_from("<IBBBBHBBBBBB", raw, 0)
-    diag = struct.unpack_from("<7H", raw, 16)
+    diag = struct.unpack_from("<8H", raw, 16)
     return {
         "t_ms": t_ms,
         "capability": name_of(CAPABILITY, cap),
