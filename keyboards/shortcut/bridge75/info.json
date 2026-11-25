@@ -11,7 +11,8 @@
     "usb": {
         "device_version": "0.0.1",
         "suspend_wakeup_delay": 1000,
-        "no_startup_check": true
+        "no_startup_check": true,
+        "force_nkro": true
     },
     "diode_direction": "ROW2COL",
     "eeprom": {
